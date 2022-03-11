@@ -73,8 +73,6 @@ CDecD3D12::CDecD3D12(void)
 CDecD3D12::~CDecD3D12(void)
 {
     DestroyDecoder(true);
-
-    
 }
 
 STDMETHODIMP CDecD3D12::DestroyDecoder(bool bFull)
@@ -88,10 +86,7 @@ STDMETHODIMP CDecD3D12::DestroyDecoder(bool bFull)
     SafeRelease(&m_pD3DDebug);
     SafeRelease(&m_pStagingTexture);
     for (int x = 0; x < MAX_SURFACE_COUNT; x++)
-    {
         SafeRelease(&m_pTexture[x]);
-
-    }
 
     SafeRelease(&m_pVideoDevice);
     SafeRelease(&m_pDxgiAdapter);
@@ -382,8 +377,15 @@ STDMETHODIMP CDecD3D12::FillHWContext(AVD3D12VAContext *ctx)
 
 STDMETHODIMP_(long) CDecD3D12::GetBufferCount(long *pMaxBuffers)
 {
+    long buffers = 0;
     //to do add check for each codec but for h264 its already 16
-    long buffers = 16;
+    // Buffers based on max ref frames
+        if (m_nCodecId == AV_CODEC_ID_H264 || m_nCodecId == AV_CODEC_ID_HEVC)
+            buffers = 16;
+        else if (m_nCodecId == AV_CODEC_ID_VP9 || m_nCodecId == AV_CODEC_ID_AV1)
+            buffers = 8;
+        else
+            buffers = 2;
 
     return buffers;
 }
@@ -414,9 +416,13 @@ STDMETHODIMP CDecD3D12::FlushDisplayQueue(BOOL bDeliver)
 
 STDMETHODIMP CDecD3D12::Flush()
 {
-/*
+    ref_free_index.clear();
+    ref_free_index.resize(0);
+    for (int i = 0; i < GetBufferCount(); i++)
+        ref_free_index.push_back(i);
+
     CDecAvcodec::Flush();
-    */
+/*    */
     // Flush display queue
     FlushDisplayQueue(FALSE);
 
@@ -490,14 +496,25 @@ STDMETHODIMP CDecD3D12::ReInitD3D12Decoder(AVCodecContext* s)
         }
 
     }
-    if (decoder_format == NULL || decoder_format->formatTexture != DXGI_FORMAT_NV12)
-        processorInput[idx++] = fmt->D3D12_FindDXGIFormat(DXGI_FORMAT_NV12);
+    
     processorInput[idx++] = fmt->D3D12_FindDXGIFormat(DXGI_FORMAT_420_OPAQUE);
 
     D3D12_FEATURE_DATA_VIDEO_DECODE_FORMAT_COUNT decode_formats;
     decode_formats.NodeIndex = 0;
     decode_formats.FormatCount = 0;
-    decode_formats.Configuration.DecodeProfile = D3D12_VIDEO_DECODE_PROFILE_H264;
+    if (s->codec->id == AV_CODEC_ID_H264)
+    {
+        decode_formats.Configuration.DecodeProfile = D3D12_VIDEO_DECODE_PROFILE_H264;
+        if (decoder_format == NULL || decoder_format->formatTexture != DXGI_FORMAT_NV12)
+            processorInput[idx++] = fmt->D3D12_FindDXGIFormat(DXGI_FORMAT_NV12);
+    }
+    else if (s->codec->id == AV_CODEC_ID_HEVC)
+    {
+    
+        decode_formats.Configuration.DecodeProfile = D3D12_VIDEO_DECODE_PROFILE_HEVC_MAIN10;
+        if (decoder_format == NULL || decoder_format->formatTexture != DXGI_FORMAT_P010)
+        processorInput[idx++] = fmt->D3D12_FindDXGIFormat(DXGI_FORMAT_P010);
+    }
     decode_formats.Configuration.InterlaceType = D3D12_VIDEO_FRAME_CODED_INTERLACE_TYPE_NONE;
     decode_formats.Configuration.BitstreamEncryption = D3D12_BITSTREAM_ENCRYPTION_TYPE_NONE;
     hr = pDec->m_pVideoDevice->CheckFeatureSupport(D3D12_FEATURE_VIDEO_DECODE_FORMAT_COUNT, &decode_formats, sizeof(decode_formats));
@@ -528,7 +545,7 @@ STDMETHODIMP CDecD3D12::ReInitD3D12Decoder(AVCodecContext* s)
             if (supported_formats[f] == processorInput[idx]->formatTexture)
             {
                 D3D12_FEATURE_DATA_VIDEO_DECODE_SUPPORT decode_support = { 0 };
-                decode_support.Configuration.DecodeProfile = D3D12_VIDEO_DECODE_PROFILE_H264;
+                decode_support.Configuration.DecodeProfile = decode_formats.Configuration.DecodeProfile;
                 decode_support.Configuration.BitstreamEncryption = D3D12_BITSTREAM_ENCRYPTION_TYPE_NONE;
                 decode_support.Configuration.InterlaceType = D3D12_VIDEO_FRAME_CODED_INTERLACE_TYPE_NONE;
                 decode_support.DecodeFormat = processorInput[idx]->formatTexture;
@@ -548,7 +565,7 @@ STDMETHODIMP CDecD3D12::ReInitD3D12Decoder(AVCodecContext* s)
                     if (decode_support.SupportFlags & D3D12_VIDEO_DECODE_SUPPORT_FLAG_SUPPORTED)
                     {
 
-                        if (processorInput[idx]->formatTexture == DXGI_FORMAT_NV12)
+                        if (processorInput[idx]->formatTexture == DXGI_FORMAT_NV12 || processorInput[idx]->formatTexture == DXGI_FORMAT_P010)
                         {
                             is_supported = true;
                             pDec->render_fmt = processorInput[idx];
@@ -590,7 +607,7 @@ STDMETHODIMP CDecD3D12::ReInitD3D12Decoder(AVCodecContext* s)
         pDec->ref_table[surface_idx] = pDec->m_pTexture[surface_idx];
         pDec->ref_index[surface_idx] = 0;// surface_idx;
     }
-    decoderDesc.Configuration.DecodeProfile = D3D12_VIDEO_DECODE_PROFILE_H264;
+    decoderDesc.Configuration.DecodeProfile = decode_formats.Configuration.DecodeProfile;;
     decoderDesc.NodeMask = 0;
     decoderDesc.Configuration.InterlaceType = D3D12_VIDEO_FRAME_CODED_INTERLACE_TYPE_NONE;
     decoderDesc.Configuration.BitstreamEncryption = D3D12_BITSTREAM_ENCRYPTION_TYPE_NONE;
@@ -599,7 +616,7 @@ STDMETHODIMP CDecD3D12::ReInitD3D12Decoder(AVCodecContext* s)
 
     hr = pDec->m_pVideoDevice->CreateVideoDecoder(&decoderDesc, IID_ID3D12VideoDecoder, (void**)&decoder);
     pDec->m_pVideoDecoder = decoder;
-    pDec->m_pD3D12VAContext.workaround = 0;
+    pDec->m_pD3D12VAContext.workaround = 0;// FF_DXVA2_WORKAROUND_HEVC_REXT;
     pDec->m_pD3D12VAContext.report_id = 0;
     pDec->m_pD3D12VAContext.decoder = decoder;
     pDec->m_pVideoDecoderCfg.NodeMask = 0;
@@ -792,6 +809,7 @@ static void d3d12_direct_free(LAVFrame *pFrame)
     c->pDec->free_buffer(c->frame_index);
     delete c;
 }
+
 void CDecD3D12::free_buffer(int idx)
 {
     ref_free_index.push_back(idx);
@@ -802,31 +820,35 @@ HRESULT CDecD3D12::UpdateStaging()
 {
     
     HRESULT hr = S_OK;
-    if (!m_pD3DCommands)
+    if (m_pStagingTexture)
     {
-        m_pD3DCommands = new CD3D12Commands(m_pD3DDevice);
-        m_pStagingDesc = {};
-        m_pStagingProp = {};
-        UINT64 sss;
-        D3D12_RESOURCE_DESC indesc = ref_table[0]->GetDesc();
-        //nv12
-        //DXGI_FORMAT_R8_UNORM first plane
-        //DXGI_FORMAT_R8G8_UNORM second plane
-        m_pD3DDevice->GetCopyableFootprints(&indesc,
-            0, 2, 0, m_pStagingLayout.layoutplane, m_pStagingLayout.rows_plane, m_pStagingLayout.pitch_plane, &m_pStagingLayout.RequiredSize);
-
-
-        m_pStagingProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
-        m_pStagingDesc = CD3DX12_RESOURCE_DESC::Buffer(m_pStagingLayout.RequiredSize);
-
-
-        hr = m_pD3DDevice->CreateCommittedResource(&m_pStagingProp, D3D12_HEAP_FLAG_NONE,
-            &m_pStagingDesc, D3D12_RESOURCE_STATE_COPY_DEST, NULL,//D3D12_RESOURCE_STATE_GENERIC_READ
-            IID_ID3D12Resource, (void**)&m_pStagingTexture);
-
-        if (FAILED(hr))
-            assert(0);
+        SafeRelease(&m_pStagingTexture);
     }
+    
+    if (!m_pD3DCommands)
+        m_pD3DCommands = new CD3D12Commands(m_pD3DDevice);
+    m_pStagingDesc = {};
+        
+    m_pStagingProp = {};
+    UINT64 sss;
+    D3D12_RESOURCE_DESC indesc = ref_table[0]->GetDesc();
+    //nv12
+    //DXGI_FORMAT_R8_UNORM first plane
+    //DXGI_FORMAT_R8G8_UNORM second plane
+    m_pD3DDevice->GetCopyableFootprints(&indesc,
+        0, 2, 0, m_pStagingLayout.layoutplane, m_pStagingLayout.rows_plane, m_pStagingLayout.pitch_plane, &m_pStagingLayout.RequiredSize);
+
+
+    m_pStagingProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
+    m_pStagingDesc = CD3DX12_RESOURCE_DESC::Buffer(m_pStagingLayout.RequiredSize);
+
+
+    hr = m_pD3DDevice->CreateCommittedResource(&m_pStagingProp, D3D12_HEAP_FLAG_NONE,
+        &m_pStagingDesc, D3D12_RESOURCE_STATE_COPY_DEST, NULL,//D3D12_RESOURCE_STATE_GENERIC_READ
+        IID_ID3D12Resource, (void**)&m_pStagingTexture);
+
+    if (FAILED(hr))
+        assert(0);
     return hr;
 
 }
@@ -848,38 +870,28 @@ HRESULT CDecD3D12::DeliverD3D12ReadbackDirect(LAVFrame *pFrame)
     UINT64 rowsizes[2] = {};
     UINT64 totalbytes = 0;
     D3D12_FEATURE_DATA_FORMAT_INFO info;
-    UpdateStaging();
+    if (m_pStagingDesc.Width != desc.Width || m_pStagingDesc.Height != desc.Height ||
+        m_pStagingDesc.Format != desc.Format || !m_pStagingTexture)
+        UpdateStaging();
     
     info.Format = DXGI_FORMAT_NV12;
     m_pD3DDevice->CheckFeatureSupport(D3D12_FEATURE_FORMAT_INFO, &info, sizeof(info));
     
-    //D3D12_RESOURCE_DESC desc = m_pStagingTexture->GetDesc();
     HRESULT hr;
     ID3D12GraphicsCommandList *cmd = m_pD3DCommands->GetCommandBuffer();
-    
     m_pD3DCommands->Reset(cmd);
-    
-    
     D3D12_TEXTURE_COPY_LOCATION dst;
-    D3D12_TEXTURE_COPY_LOCATION src;
-
-    D3D12_BOX box;
-    box = CD3DX12_BOX(0, 0, m_pAVCtx->width, m_pAVCtx->height);
-
-    
+    D3D12_TEXTURE_COPY_LOCATION src;   
     for (int i = 0; i < 2; i++) {
         dst = CD3DX12_TEXTURE_COPY_LOCATION(m_pStagingTexture, m_pStagingLayout.layoutplane[i]);
-
         src = CD3DX12_TEXTURE_COPY_LOCATION(out, i);
         cmd->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
-        
     }
     uint8_t* pdata;
     D3D12_RANGE range;
     range.Begin = 0;
     range.End = m_pStagingLayout.RequiredSize;
-    
-    
+
     hr = cmd->Close();
     m_pD3DCommands->Submit({ cmd });
     m_pD3DCommands->GPUSync();
@@ -907,17 +919,14 @@ HRESULT CDecD3D12::DeliverD3D12ReadbackDirect(LAVFrame *pFrame)
 STDMETHODIMP CDecD3D12::GetPixelFormat(LAVPixelFormat *pPix, int *pBpp)
 {
     //*pPix = LAVPixFmt_D3D12;
-    //*pBpp = 16;
-    //return S_OK;
-    // Output is always NV12 or P010
     if (pPix)
-        *pPix = LAVPixFmt_NV12;/*m_bReadBackFallback == false
-                    ? LAVPixFmt_D3D12
-                   : ((m_SurfaceFormat == DXGI_FORMAT_NV12) ? LAVPixFmt_P016 : LAVPixFmt_NV12);*/
+        *pPix = m_bReadBackFallback == false
+        ? LAVPixFmt_D3D12
+        : ((m_SurfaceFormat == DXGI_FORMAT_P010 || m_SurfaceFormat == DXGI_FORMAT_P016) ? LAVPixFmt_P016
+            : LAVPixFmt_NV12);
 
     if (pBpp)
         *pBpp = (m_SurfaceFormat == DXGI_FORMAT_P016) ? 16 : (m_SurfaceFormat == DXGI_FORMAT_P010 ? 10 : 8);
-
     return S_OK;
 }
 
