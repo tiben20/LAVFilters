@@ -19,7 +19,7 @@
 
 #include "stdafx.h"
 #include "avcodec.h"
-
+#include "dxva.h"
 #include "moreuuids.h"
 #include "parsers/MPEG2HeaderParser.h"
 #include "parsers/H264SequenceParser.h"
@@ -45,7 +45,6 @@ extern "C"
 ////////////////////////////////////////////////////////////////////////////////
 // Constructor
 ////////////////////////////////////////////////////////////////////////////////
-
 ILAVDecoder *CreateDecoderAVCodec()
 {
     return new CDecAvcodec();
@@ -247,6 +246,7 @@ static struct PixelFormatMapping
 
     {AV_PIX_FMT_DXVA2_VLD, LAVPixFmt_DXVA2, FALSE},
     {AV_PIX_FMT_D3D11, LAVPixFmt_D3D11, FALSE},
+    { AV_PIX_FMT_D3D12_VLD, LAVPixFmt_D3D12, FALSE},
 };
 
 static AVCodecID ff_interlace_capable[] = {AV_CODEC_ID_DNXHD,  AV_CODEC_ID_DVVIDEO,  AV_CODEC_ID_FRWU,
@@ -749,7 +749,8 @@ STDMETHODIMP CDecAvcodec::InitDecoder(AVCodecID codec, const CMediaType *pmt)
 
     if (bLAVInfoValid && lavPinInfo.pix_fmt != AV_PIX_FMT_NONE && codec != AV_CODEC_ID_FRAPS)
     {
-        if (m_pAVCtx->pix_fmt != AV_PIX_FMT_DXVA2_VLD && m_pAVCtx->pix_fmt != AV_PIX_FMT_D3D11)
+        if (m_pAVCtx->pix_fmt != AV_PIX_FMT_DXVA2_VLD && m_pAVCtx->pix_fmt != AV_PIX_FMT_D3D11 &&
+            m_pAVCtx->pix_fmt != AV_PIX_FMT_D3D12_VLD)
             m_pAVCtx->pix_fmt = lavPinInfo.pix_fmt;
         if (m_pAVCtx->sw_pix_fmt == AV_PIX_FMT_NONE)
             m_pAVCtx->sw_pix_fmt = lavPinInfo.pix_fmt;
@@ -795,8 +796,8 @@ STDMETHODIMP CDecAvcodec::DestroyDecoder()
     m_nFFBufferSize = 0;
 
     if (m_pSwsContext)
-    {
-        sws_freeContext(m_pSwsContext);
+      
+    {  sws_freeContext(m_pSwsContext);
         m_pSwsContext = nullptr;
     }
 
@@ -868,7 +869,7 @@ STDMETHODIMP CDecAvcodec::FillAVPacketData(AVPacket *avpkt, const uint8_t *buffe
 
     return S_OK;
 }
-
+/**/
 STDMETHODIMP CDecAvcodec::Decode(const BYTE *buffer, int buflen, REFERENCE_TIME rtStartIn, REFERENCE_TIME rtStopIn,
                                  BOOL bSyncPoint, BOOL bDiscontinuity, IMediaSample *pSample)
 {
@@ -1156,7 +1157,13 @@ send_packet:
     while (1)
     {
         ret = avcodec_receive_frame(m_pAVCtx, m_pFrame);
-
+        char err[1024] = { 0 };
+        if (ret < 0)
+        {
+            av_strerror(ret, err, 1024);
+            
+        }
+        
         if (FAILED(PostDecode()))
         {
             av_frame_unref(m_pFrame);
@@ -1393,6 +1400,10 @@ send_packet:
             HandleDXVA2Frame(pOutFrame);
         }
         else if (pOutFrame->format == LAVPixFmt_D3D11)
+        {
+            HandleDXVA2Frame(pOutFrame);
+        }
+        else if (pOutFrame->format == LAVPixFmt_D3D12)
         {
             HandleDXVA2Frame(pOutFrame);
         }

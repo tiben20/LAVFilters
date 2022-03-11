@@ -65,12 +65,13 @@ configure() (
     --disable-encoders              \
     --disable-devices               \
     --disable-programs              \
-    --disable-debug                 \
+    --enable-debug                  \
     --disable-doc                   \
     --enable-avisynth               \
     --enable-bzlib                  \
     --enable-d3d11va                \
     --enable-dxva2                  \
+    --enable-d3d12                  \
     --enable-gnutls                 \
     --enable-gmp                    \
     --enable-libdav1d               \

@@ -2147,7 +2147,8 @@ HRESULT CLAVAudio::Decode(const BYTE *pDataBuffer, int buffsize, int &consumed, 
     BOOL bFlush = (pDataBuffer == nullptr);
 
     AVPacket avpkt;
-    av_init_packet(&avpkt);
+    av_new_packet(&avpkt, buffsize);
+    
 
     const MediaSideDataFFMpeg *pFFSideData = nullptr;
 

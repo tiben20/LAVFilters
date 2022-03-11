@@ -1910,7 +1910,7 @@ STDMETHODIMP CLAVVideo::Deliver(LAVFrame *pFrame)
 
     // Only perform filtering if we have to.
     // DXVA Native generally can't be filtered, and the only filtering we currently support is software deinterlacing
-    if (pFrame->format == LAVPixFmt_DXVA2 || pFrame->format == LAVPixFmt_D3D11 ||
+    if (pFrame->format == LAVPixFmt_DXVA2 || pFrame->format == LAVPixFmt_D3D11 || pFrame->format == LAVPixFmt_D3D12 ||
         !(m_Decoder.IsInterlaced(FALSE) && m_settings.SWDeintMode != SWDeintMode_None) ||
         pFrame->flags & LAV_FRAME_FLAG_REDRAW)
     {
@@ -1937,7 +1937,7 @@ HRESULT CLAVVideo::DeliverToRenderer(LAVFrame *pFrame)
     if (!(pFrame->flags & LAV_FRAME_FLAG_REDRAW))
     {
         // Release the old End-of-Sequence frame, this ensures any "normal" frame will clear the stored EOS frame
-        if (pFrame->format != LAVPixFmt_DXVA2 && pFrame->format != LAVPixFmt_D3D11)
+        if (pFrame->format != LAVPixFmt_DXVA2 && pFrame->format != LAVPixFmt_D3D11 && pFrame->format != LAVPixFmt_D3D12)
         {
             ReleaseFrame(&m_pLastSequenceFrame);
             if ((pFrame->flags & LAV_FRAME_FLAG_END_OF_SEQUENCE || m_bInDVDMenu))
@@ -2143,7 +2143,7 @@ HRESULT CLAVVideo::DeliverToRenderer(LAVFrame *pFrame)
     if (avgDuration == 0)
         avgDuration = AV_NOPTS_VALUE;
 
-    if (pFrame->format == LAVPixFmt_DXVA2 || pFrame->format == LAVPixFmt_D3D11)
+    if (pFrame->format == LAVPixFmt_DXVA2 || pFrame->format == LAVPixFmt_D3D11 || pFrame->format == LAVPixFmt_D3D12)
     {
         pSampleOut = (IMediaSample *)pFrame->data[0];
         // Addref the sample if we need to. If its coming from the decoder, it should be addref'ed,
@@ -2208,7 +2208,7 @@ HRESULT CLAVVideo::DeliverToRenderer(LAVFrame *pFrame)
         }
     }
 
-    if (pFrame->format != LAVPixFmt_DXVA2 && pFrame->format != LAVPixFmt_D3D11)
+    if (pFrame->format != LAVPixFmt_DXVA2 && pFrame->format != LAVPixFmt_D3D11 && pFrame->format != LAVPixFmt_D3D12)
     {
         long required = m_PixFmtConverter.GetImageSize(pBIH->biWidth, abs(pBIH->biHeight));
 
@@ -2661,7 +2661,12 @@ STDMETHODIMP CLAVVideo::SetHWAccel(LAVHWAccel hwAccel)
 
 STDMETHODIMP_(LAVHWAccel) CLAVVideo::GetHWAccel()
 {
+    #ifdef USE_D3D12_DEC
+    return HWAccel_D3D12;
+    #else
+
     return (LAVHWAccel)m_settings.HWAccel;
+    #endif
 }
 
 STDMETHODIMP CLAVVideo::SetHWAccelCodec(LAVVideoHWCodec hwAccelCodec, BOOL bEnabled)

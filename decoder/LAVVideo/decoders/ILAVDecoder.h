@@ -56,6 +56,7 @@ typedef enum LAVPixelFormat {
 
     LAVPixFmt_DXVA2,       ///< DXVA2 Surface
     LAVPixFmt_D3D11,       ///< D3D11 Surface
+    LAVPixFmt_D3D12,       ///< D3D11 Surface
 
     LAVPixFmt_NB,          ///< number of formats
 } LAVPixelFormat;
@@ -464,6 +465,7 @@ ILAVDecoder *CreateDecoderDXVA2();
 ILAVDecoder *CreateDecoderDXVA2Native();
 ILAVDecoder *CreateDecoderD3D11();
 ILAVDecoder *CreateDecoderMSDKMVC();
+ILAVDecoder *CreateDecoderD3D12();
 
 HRESULT VerifyD3D9Device(DWORD &dwIndex, DWORD dwDeviceId);
 HRESULT VerifyD3D11Device(DWORD &dwIndex, DWORD dwDeviceId);

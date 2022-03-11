@@ -101,7 +101,7 @@ class CDecD3D11 : public CDecAvcodec
 
     static enum AVPixelFormat get_d3d11_format(struct AVCodecContext *s, const enum AVPixelFormat *pix_fmts);
     static int get_d3d11_buffer(struct AVCodecContext *c, AVFrame *pic, int flags);
-
+    static void log_callback_null(void *ptr, int level, const char *fmt, va_list vl);
   private:
     CD3D11SurfaceAllocator *m_pAllocator = nullptr;
 

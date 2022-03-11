@@ -52,6 +52,12 @@
     <Filter Include="Header Files\decoders\d3d11">
       <UniqueIdentifier>{5bef8a26-ba3d-4eb9-aa69-0bfaf1c6a433}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\decoders\d3d12">
+      <UniqueIdentifier>{941beef5-19d9-4577-849b-a022ae1edf5c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\decoders\d3d12">
+      <UniqueIdentifier>{f13bdef5-ecd2-4fbb-8b86-0a82fd46c259}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -180,6 +186,27 @@
     <ClCompile Include="CCOutputPin.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="decoders\d3d12\D3D12SurfaceAllocator.cpp">
+      <Filter>Source Files\decoders\d3d12</Filter>
+    </ClCompile>
+    <ClCompile Include="decoders\d3d12\D3D12Format.cpp">
+      <Filter>Source Files\decoders\d3d12</Filter>
+    </ClCompile>
+    <ClCompile Include="decoders\d3d12dec.cpp">
+      <Filter>Source Files\decoders</Filter>
+    </ClCompile>
+    <ClCompile Include="decoders\d3d12\D3D12Shaders.cpp">
+      <Filter>Source Files\decoders\d3d12</Filter>
+    </ClCompile>
+    <ClCompile Include="decoders\d3d12\D3D12Quad.cpp">
+      <Filter>Source Files\decoders\d3d12</Filter>
+    </ClCompile>
+    <ClCompile Include="decoders\d3d12\D3D12SwapChain.cpp">
+      <Filter>Source Files\decoders\d3d12</Filter>
+    </ClCompile>
+    <ClCompile Include="decoders\d3d12\D3D12Commands.cpp">
+      <Filter>Source Files\decoders\d3d12</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stdafx.h">
@@ -299,6 +326,27 @@
     <ClInclude Include="..\..\include\ID3DVideoMemoryConfiguration.h">
       <Filter>Header Files\decoders\d3d11</Filter>
     </ClInclude>
+    <ClInclude Include="decoders\d3d12dec.h">
+      <Filter>Header Files\decoders</Filter>
+    </ClInclude>
+    <ClInclude Include="decoders\d3d12\D3D12SurfaceAllocator.h">
+      <Filter>Source Files\decoders\d3d12</Filter>
+    </ClInclude>
+    <ClInclude Include="decoders\d3d12\D3D12Format.h">
+      <Filter>Source Files\decoders\d3d12</Filter>
+    </ClInclude>
+    <ClInclude Include="decoders\d3d12\D3D12Shaders.h">
+      <Filter>Source Files\decoders\d3d12</Filter>
+    </ClInclude>
+    <ClInclude Include="decoders\d3d12\D3D12SwapChain.h">
+      <Filter>Source Files\decoders\d3d12</Filter>
+    </ClInclude>
+    <ClInclude Include="decoders\d3d12\D3D12Quad.h">
+      <Filter>Source Files\decoders\d3d12</Filter>
+    </ClInclude>
+    <ClInclude Include="decoders\d3d12\D3D12Commands.h">
+      <Filter>Source Files\decoders\d3d12</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="LAVVideo.rc">
@@ -312,6 +360,7 @@
     <None Include="..\..\resources\red.ico">
       <Filter>Resource Files</Filter>
     </None>
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="LAVVideo.manifest">

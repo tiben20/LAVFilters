@@ -182,7 +182,7 @@ LAVOutPixFmts CLAVPixFmtConverter::GetOutputBySubtype(const GUID *guid)
 
 static bool IsDXVAPixFmt(LAVPixelFormat inputFormat, LAVOutPixFmts outputFormat, int bpp)
 {
-    if (inputFormat != LAVPixFmt_DXVA2 && inputFormat != LAVPixFmt_D3D11)
+    if (inputFormat != LAVPixFmt_DXVA2 && inputFormat != LAVPixFmt_D3D11 && inputFormat != LAVPixFmt_D3D12)
         return false;
 
     if (bpp == 8 && outputFormat == LAVOutPixFmt_NV12)

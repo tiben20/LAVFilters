@@ -20,7 +20,6 @@
 #include "DecodeManager.h"
 
 #include "LAVVideo.h"
-
 #include <Shlwapi.h>
 
 CDecodeManager::CDecodeManager(CLAVVideo *pLAVVideo)
@@ -75,6 +74,8 @@ ILAVDecoder *CDecodeManager::CreateHWAccelDecoder(LAVHWAccel hwAccel)
         pDecoder = CreateDecoderDXVA2Native();
     else if (hwAccel == HWAccel_D3D11)
         pDecoder = CreateDecoderD3D11();
+    else if (hwAccel == HWAccel_D3D12)
+        pDecoder = CreateDecoderD3D12();
 
     return pDecoder;
 }
@@ -129,6 +130,10 @@ softwaredec:
         {
             m_pDecoder = CreateDecoderMSDKMVC();
         }
+        /* else if (codec == AV_CODEC_ID_H264)
+        {
+            m_pDecoder = CreateDecoderD3D12();
+        }*/
         else
             m_pDecoder = CreateDecoderAVCodec();
     }

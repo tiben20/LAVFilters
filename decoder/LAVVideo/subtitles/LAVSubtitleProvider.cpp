@@ -266,7 +266,7 @@ STDMETHODIMP CLAVSubtitleProvider::Decode(BYTE *buf, int buflen, REFERENCE_TIME 
   ASSERT(m_pAVCtx);
 
   AVPacket avpkt;
-  av_init_packet(&avpkt);
+  av_new_packet(&avpkt,buflen);
 
   AVSubtitle sub;
   memset(&sub, 0, sizeof(sub));

@@ -325,7 +325,7 @@ HRESULT CLAVAudio::Bitstream(const BYTE *pDataBuffer, int buffsize, int &consume
     BOOL bFlush = (pDataBuffer == nullptr);
 
     AVPacket avpkt;
-    av_init_packet(&avpkt);
+    av_new_packet(&avpkt,buffsize);
     avpkt.duration = 1;
 
     consumed = 0;

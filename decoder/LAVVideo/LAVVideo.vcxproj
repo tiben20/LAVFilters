@@ -36,6 +36,18 @@
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <Import Project="$(SolutionDir)common\common.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -53,13 +65,17 @@
     <OutDir>$(SolutionDir)bin_$(PlatformName)\$(ProjectName)\</OutDir>
     <CustomBuildAfterTargets>Build</CustomBuildAfterTargets>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LibraryPath>$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);E:\Coding\d3d12tk\Bin\Desktop_2022_Win10\x64\Debug\</LibraryPath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);E:\Coding\d3d12tk\Inc</IncludePath>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;LAVVIDEO_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)qsdecoder;$(ProjectDir)decoders\mvc\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>%(AdditionalIncludeDirectories);$(SolutionDir)qsdecoder;$(ProjectDir)decoders\mvc\include;E:\Coding\D3D12TranslationLayer-master\include;E:\Coding\D3D12TranslationLayer-master\bin\packages\WinPixEventRuntime.1.0.190604001\Include\WinPixEventRuntime;E:\Coding\D3D12TranslationLayer-master\bin\_deps\directx-headers-src\include;E:\Coding\D3D12TranslationLayer-master\external</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>advapi32.lib;ole32.lib;gdi32.lib;winmm.lib;user32.lib;oleaut32.lib;shell32.lib;Shlwapi.lib;Comctl32.lib;d3d9.lib;mfuuid.lib;dmoguids.lib;avutil-lav.lib;avcodec-lav.lib;swscale-lav.lib;avfilter-lav.lib;libmfx.lib</AdditionalDependencies>
+      <AdditionalDependencies>Gdiplus.lib;DirectXTK12.lib;advapi32.lib;ole32.lib;gdi32.lib;winmm.lib;user32.lib;oleaut32.lib;shell32.lib;Shlwapi.lib;Comctl32.lib;d3d9.lib;mfuuid.lib;dmoguids.lib;avutil-lav.lib;avcodec-lav.lib;swscale-lav.lib;avfilter-lav.lib;libmfx.lib;d3d12.lib;dxgi.lib;dxguid.lib</AdditionalDependencies>
       <ModuleDefinitionFile>LAVVideo.def</ModuleDefinitionFile>
       <AdditionalLibraryDirectories Condition="'$(Platform)'=='Win32'">$(ProjectDir)decoders\mvc\lib32;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalLibraryDirectories Condition="'$(Platform)'=='x64'">$(ProjectDir)decoders\mvc\lib64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -95,6 +111,13 @@
     <ClCompile Include="decoders\cuvid.cpp" />
     <ClCompile Include="decoders\d3d11va.cpp" />
     <ClCompile Include="decoders\d3d11\D3D11SurfaceAllocator.cpp" />
+    <ClCompile Include="decoders\d3d12dec.cpp" />
+    <ClCompile Include="decoders\d3d12\D3D12Commands.cpp" />
+    <ClCompile Include="decoders\d3d12\D3D12Format.cpp" />
+    <ClCompile Include="decoders\d3d12\D3D12Quad.cpp" />
+    <ClCompile Include="decoders\d3d12\D3D12Shaders.cpp" />
+    <ClCompile Include="decoders\d3d12\D3D12SurfaceAllocator.cpp" />
+    <ClCompile Include="decoders\d3d12\D3D12SwapChain.cpp" />
     <ClCompile Include="decoders\dxva2dec.cpp" />
     <ClCompile Include="decoders\dxva2\DXVA2SurfaceAllocator.cpp" />
     <ClCompile Include="decoders\dxva2\dxva_common.cpp" />
@@ -146,6 +169,13 @@
     <ClInclude Include="decoders\cuvid.h" />
     <ClInclude Include="decoders\d3d11va.h" />
     <ClInclude Include="decoders\d3d11\D3D11SurfaceAllocator.h" />
+    <ClInclude Include="decoders\d3d12dec.h" />
+    <ClInclude Include="decoders\d3d12\D3D12Commands.h" />
+    <ClInclude Include="decoders\d3d12\D3D12Format.h" />
+    <ClInclude Include="decoders\d3d12\D3D12Quad.h" />
+    <ClInclude Include="decoders\d3d12\D3D12Shaders.h" />
+    <ClInclude Include="decoders\d3d12\D3D12SurfaceAllocator.h" />
+    <ClInclude Include="decoders\d3d12\D3D12SwapChain.h" />
     <ClInclude Include="decoders\DecBase.h" />
     <ClInclude Include="decoders\dxva2dec.h" />
     <ClInclude Include="decoders\dxva2\DXVA2SurfaceAllocator.h" />
@@ -183,6 +213,7 @@
     <None Include="..\..\resources\red.ico" />
     <None Include="LAVVideo.rc2" />
     <Manifest Include="LAVVideo.manifest" />
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\common\baseclasses\baseclasses.vcxproj">
@@ -193,6 +224,9 @@
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets">
-  </ImportGroup>
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+  </Target>
 </Project>

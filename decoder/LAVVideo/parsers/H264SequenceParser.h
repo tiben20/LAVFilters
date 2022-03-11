@@ -45,6 +45,8 @@ class CH264SequenceParser
         int primaries;
         int trc;
         int colorspace;
+        int mb_width;
+        int mb_height;
     } sps;
 
     struct

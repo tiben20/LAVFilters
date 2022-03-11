@@ -1786,7 +1786,7 @@ STDMETHODIMP CLAVFDemuxer::CombineMVCBaseExtension(Packet *pBasePacket)
 
     if (m_pBluRay && m_MVCExtensionQueue.empty())
     {
-        HRESULT hr = m_pBluRay->FillMVCExtensionQueue(pBasePacket->rtDTS);
+        HRESULT hr = m_pBluRay->FillMVCExtensionQueue(pBasePacket->rtDTS, pBasePacket->GetDataSize());
         if (hr == S_OK)
             return CombineMVCBaseExtension(pBasePacket);
         else if (FAILED(hr))

@@ -535,6 +535,13 @@ STDMETHODIMP CDecD3D11::BreakConnect()
     return S_OK;
 }
 
+void CDecD3D11::log_callback_null(void *ptr, int level, const char *fmt, va_list vl)
+{
+    char out[4096];
+    vsnprintf(out, sizeof(out), fmt, vl);
+    DbgLog((LOG_TRACE, 10, out));
+}
+
 STDMETHODIMP CDecD3D11::InitDecoder(AVCodecID codec, const CMediaType *pmt)
 {
     HRESULT hr = S_OK;
@@ -554,6 +561,8 @@ STDMETHODIMP CDecD3D11::InitDecoder(AVCodecID codec, const CMediaType *pmt)
 
     // Initialize ffmpeg
     hr = CDecAvcodec::InitDecoder(codec, pmt);
+    m_pAVCtx->debug = 0;
+    //av_log_set_callback(log_callback_null);
     if (FAILED(hr))
         return hr;
 

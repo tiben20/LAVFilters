@@ -455,7 +455,7 @@ fail:
 }
 
 #define MVC_DEMUX_COUNT 100
-STDMETHODIMP CBDDemuxer::FillMVCExtensionQueue(REFERENCE_TIME rtBase)
+STDMETHODIMP CBDDemuxer::FillMVCExtensionQueue(REFERENCE_TIME rtBase,int buffsize)
 {
     if (!m_MVCFormatContext)
         return E_FAIL;
@@ -464,7 +464,9 @@ STDMETHODIMP CBDDemuxer::FillMVCExtensionQueue(REFERENCE_TIME rtBase)
     bool found = (rtBase == Packet::INVALID_TIME);
 
     AVPacket mvcPacket = {0};
-    av_init_packet(&mvcPacket);
+    av_new_packet(&mvcPacket, buffsize);
+    
+    //(&mvcPacket);
 
     while (count < MVC_DEMUX_COUNT)
     {
