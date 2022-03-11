@@ -195,15 +195,6 @@
     <ClCompile Include="decoders\d3d12dec.cpp">
       <Filter>Source Files\decoders</Filter>
     </ClCompile>
-    <ClCompile Include="decoders\d3d12\D3D12Shaders.cpp">
-      <Filter>Source Files\decoders\d3d12</Filter>
-    </ClCompile>
-    <ClCompile Include="decoders\d3d12\D3D12Quad.cpp">
-      <Filter>Source Files\decoders\d3d12</Filter>
-    </ClCompile>
-    <ClCompile Include="decoders\d3d12\D3D12SwapChain.cpp">
-      <Filter>Source Files\decoders\d3d12</Filter>
-    </ClCompile>
     <ClCompile Include="decoders\d3d12\D3D12Commands.cpp">
       <Filter>Source Files\decoders\d3d12</Filter>
     </ClCompile>
@@ -333,15 +324,6 @@
       <Filter>Source Files\decoders\d3d12</Filter>
     </ClInclude>
     <ClInclude Include="decoders\d3d12\D3D12Format.h">
-      <Filter>Source Files\decoders\d3d12</Filter>
-    </ClInclude>
-    <ClInclude Include="decoders\d3d12\D3D12Shaders.h">
-      <Filter>Source Files\decoders\d3d12</Filter>
-    </ClInclude>
-    <ClInclude Include="decoders\d3d12\D3D12SwapChain.h">
-      <Filter>Source Files\decoders\d3d12</Filter>
-    </ClInclude>
-    <ClInclude Include="decoders\d3d12\D3D12Quad.h">
       <Filter>Source Files\decoders\d3d12</Filter>
     </ClInclude>
     <ClInclude Include="decoders\d3d12\D3D12Commands.h">

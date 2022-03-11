@@ -54,29 +54,20 @@ CDecD3D12::CDecD3D12(void)
     : CDecAvcodec()
 {
     m_pD3DCommands = nullptr;
-    picQuad = nullptr;
-    regionQuad = nullptr;
+    
     m_pD3DDevice = nullptr;
     m_pVideoDevice = nullptr;
     m_pDxgiAdapter = nullptr;
     m_pDxgiFactory = nullptr;
     m_pVideoDecoder = nullptr;
     m_pD3DDebug = nullptr;
-    pShaders = nullptr;
     m_pD3DDebug1 = nullptr;
     for (int x = 0; x < MAX_SURFACE_COUNT; x++)
-    {
         m_pTexture[x] = nullptr;
-        
-    }
+
     m_pStagingTexture = nullptr;
-    
-	
     av_frame_free(&m_pFrame);
     m_pD3D12VAContext.decoder = nullptr;
-    
-    //for (int x = 0; x < MAX_SURFACE_COUNT; x++)
-    //    ref_texture_used[x] = false;
 }
 
 CDecD3D12::~CDecD3D12(void)
@@ -95,9 +86,6 @@ STDMETHODIMP CDecD3D12::DestroyDecoder(bool bFull)
     SafeRelease(&m_pDxgiAdapter);
     SafeRelease(&m_pD3DDebug1);
     SafeRelease(&m_pD3DDebug);
-    pFormat = nullptr;
-    pShaders = nullptr;
-    pSwapChain = nullptr;
     SafeRelease(&m_pStagingTexture);
     for (int x = 0; x < MAX_SURFACE_COUNT; x++)
     {
@@ -115,11 +103,7 @@ STDMETHODIMP CDecD3D12::DestroyDecoder(bool bFull)
     av_frame_free(&m_pFrame);
     
     SafeRelease(&m_pD3D12VAContext.decoder);
-    if (bFull)
-    {
-        FreeLibrary(shaders.compiler_dll);
-        shaders.compiler_dll = nullptr;
-    }
+    
     CDecAvcodec::DestroyDecoder();
     
     return S_OK;
@@ -644,7 +628,7 @@ STDMETHODIMP CDecD3D12::CreateD3D12Decoder()
     m_dwSurfaceHeight = dxva_align_dimensions(m_pAVCtx->codec_id, m_pAVCtx->coded_height);
     
     m_dwSurfaceCount = GetBufferCount();
-    pFormat = new CD3D12Format();
+    
     return E_FAIL;
 }
 
@@ -816,228 +800,32 @@ void CDecD3D12::free_buffer(int idx)
 
 HRESULT CDecD3D12::UpdateStaging()
 {
-    HRESULT hr;
-    if (!picQuad)
-    {   
-        //pSwapChain = new CD3D12SwapChain(m_pD3DDevice, m_commandQueue, nullptr);
-        //hr = pSwapChain->CreateRenderTargets();
-        texture_fmt.primaries = COLOR_PRIMARIES_UNDEF;
-        texture_fmt.transfer = TRANSFER_FUNC_SRGB;
-        displayFormat.primaries = COLOR_PRIMARIES_UNDEF;
-        displayFormat.pixelFormat = render_fmt;
-        displayFormat.transfer = TRANSFER_FUNC_SRGB;
-        for (int i = 47; i > 41; --i)
-        {
-            WCHAR filename[19];
-            _snwprintf(filename, ARRAY_SIZE(filename), TEXT("D3DCOMPILER_%d.dll"), i);
-            shaders.compiler_dll = LoadLibrary(filename);
-            if (shaders.compiler_dll) break;
-        }
-        if (shaders.compiler_dll)
-        {
-            shaders.OurD3DCompile = (pD3DCompile)GetProcAddress(shaders.compiler_dll, "D3DCompile");
-            if (!shaders.OurD3DCompile) {
-                
-                FreeLibrary(shaders.compiler_dll);
-                assert(0);
-            }
-        }
-        pShaders = new CD3D12Shaders();
-        picQuad = new CD3D12Quad(render_fmt);
-        /*hr = D3D12_CompilePipelineState(vd, &sys->shaders, sys->d3d_dev, sys->picQuad.generic.textureFormat,
-            &sys->display, false, fmt->transfer,
-            fmt->color_range == COLOR_RANGE_FULL,
-            vd->source->projection_mode,
-            sys->picQuad.commands, sys->picQuad.m_pipelines, sys->picQuad.shader_views);*/
-        pShaders->CompilePipelineState(&shaders, m_pD3DDevice, render_fmt, &displayFormat, true, texture_fmt.transfer, true, texture_fmt.projection_mode,
-            picQuad->commands, picQuad->m_pipelines, picQuad->shader_views);
-        renderFence.fenceReached = CreateEvent(NULL, TRUE, FALSE, NULL);
-        if (!!(renderFence.fenceReached == NULL))
-            return S_FALSE;
-        hr = m_pD3DDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_ID3D12Fence, (void**)&renderFence.d3dRenderFence);
-        renderFence.fenceCounter = 0;
-        if (FAILED(hr))
-            assert(0);
-            
-        D3D12_COMMAND_QUEUE_DESC queueDesc;
-        ZeroMemory(&queueDesc, sizeof(D3D12_COMMAND_QUEUE_DESC));
-        queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-        queueDesc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
-        queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-
-        
-        hr = m_pD3DDevice->CreateCommandQueue( &queueDesc, IID_ID3D12CommandQueue, (void**)&m_commandQueue);
-        D3D12_ObjectSetName(m_commandQueue, L"display module Command Queue");
-        hr = D3D12_CommandListCreateGraphic(m_pD3DDevice, &staging.commandList);
-        
-        
-        picQuad->i_width = texture_fmt.i_width = texture_fmt.i_visible_width = m_pAVCtx->width;
-        picQuad->i_height = texture_fmt.i_height = texture_fmt.i_visible_height = m_pAVCtx->height;
-        picQuad->D3D12_AllocateQuad(m_pD3DDevice, PROJECTION_MODE_RECTANGULAR);
-        
-        
-        picQuad->SetupQuad(&texture_fmt, &displayFormat);
-        
-    
-    
-    /* we need a staging texture */
-    //video_format_t texture_fmt;
-    texture_fmt.i_width = picQuad->i_width;
-    texture_fmt.i_height = picQuad->i_height;
-    texture_fmt.i_chroma = picQuad->textureFormat->fourcc;
-    texture_fmt.space = COLOR_SPACE_UNDEF;
-    vlc_chroma_description_t* p_chroma_desc;
-    p_chroma_desc = (vlc_chroma_description_t*)malloc(sizeof(vlc_chroma_description_t));
-    p_chroma_desc->plane_count = 2;
-    p_chroma_desc->pixel_bits = 8;
-    p_chroma_desc->pixel_size = 1;
-    p_chroma_desc->p[0].w.den = 1;
-    p_chroma_desc->p[0].w.num = 1;
-    p_chroma_desc->p[0].h.num = 1;
-    p_chroma_desc->p[0].h.den = 1;
-    p_chroma_desc->p[1].h.num = 1;
-    p_chroma_desc->p[1].h.den = 2;
-    p_chroma_desc->p[1].w.num = 2;
-    p_chroma_desc->p[1].w.den = 2;
-    // = vlc_fourcc_GetChromaDescription(texture_fmt.i_chroma);
-    assert(p_chroma_desc != NULL);
-
-    staging.picSys.array_size = 1;
-    staging.picSys.slice_index = 0;
-    for (unsigned plane = 0; plane < p_chroma_desc->plane_count; plane++)
-    {
-        // texture used by the pixel shader
-        D3D12_HEAP_PROPERTIES m_textureProp;
-        ZeroMemory(&m_textureProp, sizeof(D3D12_HEAP_PROPERTIES));
-        m_textureProp.Type = D3D12_HEAP_TYPE_DEFAULT;
-        m_textureProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-        m_textureProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-        m_textureProp.CreationNodeMask = 1;
-        m_textureProp.VisibleNodeMask = 1;
-
-        D3D12_RESOURCE_DESC m_textureDesc;
-        ZeroMemory(&m_textureDesc, sizeof(D3D12_RESOURCE_DESC));
-        m_textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-        m_textureDesc.Width = texture_fmt.i_width;// texture_fmt.i_width* p_chroma_desc->p[plane].w.num / p_chroma_desc->p[plane].w.den;
-        m_textureDesc.Height = texture_fmt.i_width;// texture_fmt.i_height* p_chroma_desc->p[plane].h.num / p_chroma_desc->p[plane].h.den;
-        m_textureDesc.DepthOrArraySize = 1;
-        m_textureDesc.MipLevels = 1;
-        m_textureDesc.Format = DXGI_FORMAT_NV12;//;picQuad->textureFormat->resourceFormat[plane];
-        m_textureDesc.SampleDesc.Count = 1;
-        m_textureDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-        m_textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-        hr = m_pD3DDevice->CreateCommittedResource(&m_textureProp, D3D12_HEAP_FLAG_NONE,
-            &m_textureDesc, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, NULL,
-            IID_ID3D12Resource, (void**)&staging.picSys.resource[plane]);
-        D3D12_ObjectSetName(staging.picSys.resource[plane], L"staging shader Texture[%d]", plane);
-        staging.picSys.resource_plane[plane] = 0;
-
-        m_pD3DDevice->GetCopyableFootprints(&m_textureDesc, 0, 1, 0,
-            &staging.m_textureFootprint[plane].layout, &staging.m_textureFootprint[plane].rows,
-            &staging.m_textureFootprint[plane].pitch, &staging.m_textureFootprint[plane].RequiredSize);
-
-        staging.planes[plane].i_lines = staging.m_textureFootprint[plane].rows;
-        staging.planes[plane].i_pitch = staging.m_textureFootprint[plane].layout.Footprint.RowPitch;
-        staging.planes[plane].i_visible_lines = texture_fmt.i_visible_height * p_chroma_desc->p[plane].h.num / p_chroma_desc->p[plane].h.den;
-        staging.planes[plane].i_visible_pitch = texture_fmt.i_visible_width * p_chroma_desc->p[plane].w.num / p_chroma_desc->p[plane].w.den * p_chroma_desc->pixel_size;
-        staging.planes[plane].i_pixel_pitch = p_chroma_desc->pixel_size;
-
-        // intermediate texture to copy from CPU to GPU
-        D3D12_HEAP_PROPERTIES m_uploadProp;
-        ZeroMemory(&m_uploadProp, sizeof(D3D12_HEAP_PROPERTIES));
-        m_uploadProp.Type = D3D12_HEAP_TYPE_READBACK;// D3D12_HEAP_TYPE_DEFAULT;//D3D12_HEAP_TYPE_UPLOAD;
-        m_uploadProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;// D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-        m_uploadProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-        m_uploadProp.CreationNodeMask = 1;
-        m_uploadProp.VisibleNodeMask = 1;
-        
-
-        D3D12_RESOURCE_DESC m_uploadDesc;
-        ZeroMemory(&m_uploadDesc, sizeof(D3D12_RESOURCE_DESC));
-        m_uploadDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-        m_uploadDesc.Width =staging.m_textureFootprint[plane].RequiredSize;
-        m_uploadDesc.Height = 1;
-        m_uploadDesc.DepthOrArraySize = 1;
-        m_uploadDesc.MipLevels = 1;
-        m_uploadDesc.Format = DXGI_FORMAT_UNKNOWN;
-        m_uploadDesc.SampleDesc.Count = 1;
-        m_uploadDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-        m_uploadDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-        hr = m_pD3DDevice->CreateCommittedResource(&m_uploadProp, D3D12_HEAP_FLAG_NONE,
-            &m_uploadDesc, D3D12_RESOURCE_STATE_COPY_DEST, NULL,//D3D12_RESOURCE_STATE_GENERIC_READ
-            IID_ID3D12Resource, (void**)&staging.textureUpload[plane]);
-        /*hr = m_pD3DDevice->CreateCommittedResource(&m_uploadProp, D3D12_HEAP_FLAG_NONE,
-            &m_uploadDesc, D3D12_RESOURCE_STATE_COPY_DEST, NULL,//D3D12_RESOURCE_STATE_GENERIC_READ
-            IID_ID3D12Resource, (void**)&staging.textureUpload[plane]);*/
-        D3D12_ObjectSetName(staging.textureUpload[plane], L"staging upload Texture[%d]", plane);
-    }
-    }
-    return S_OK;
-}
-
-HRESULT CDecD3D12::UpdateStaging(int index)
-{
     
     HRESULT hr = S_OK;
     if (!m_pD3DCommands)
     {
-        for (int i = 47; i > 41; --i)
-        {
-            WCHAR filename[19];
-            _snwprintf(filename, ARRAY_SIZE(filename), TEXT("D3DCOMPILER_%d.dll"), i);
-            shaders.compiler_dll = LoadLibrary(filename);
-            if (shaders.compiler_dll) break;
-        }
-        if (shaders.compiler_dll)
-        {
-            shaders.OurD3DCompile = (pD3DCompile)GetProcAddress(shaders.compiler_dll, "D3DCompile");
-            if (!shaders.OurD3DCompile) {
-
-                FreeLibrary(shaders.compiler_dll);
-                assert(0);
-            }
-        }
-        pShaders = new CD3D12Shaders();
-        picQuad = new CD3D12Quad(render_fmt);
-        
         m_pD3DCommands = new CD3D12Commands(m_pD3DDevice);
-        //NV12 4 2 0
         m_pStagingDesc = {};
         m_pStagingProp = {};
-
-        m_pStagingProp.Type = D3D12_HEAP_TYPE_READBACK;// D3D12_HEAP_TYPE_DEFAULT;//D3D12_HEAP_TYPE_UPLOAD;
-        m_pStagingProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;// D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-        m_pStagingProp.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-        m_pStagingProp.CreationNodeMask = 1;
-        m_pStagingProp.VisibleNodeMask = 1;
         UINT64 sss;
-        D3D12_RESOURCE_DESC indesc = ref_table[index]->GetDesc();
-        m_pD3DDevice->GetCopyableFootprints(&CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_NV12,
-            m_pAVCtx->width,
-            m_pAVCtx->height,
-            1,
-            1),
+        D3D12_RESOURCE_DESC indesc = ref_table[0]->GetDesc();
+        //nv12
+        //DXGI_FORMAT_R8_UNORM first plane
+        //DXGI_FORMAT_R8G8_UNORM second plane
+        m_pD3DDevice->GetCopyableFootprints(&indesc,
             0, 2, 0, m_pStagingLayout.layoutplane, m_pStagingLayout.rows_plane, m_pStagingLayout.pitch_plane, &m_pStagingLayout.RequiredSize);
 
 
         m_pStagingProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
         m_pStagingDesc = CD3DX12_RESOURCE_DESC::Buffer(m_pStagingLayout.RequiredSize);
 
-//nv12
-//DXGI_FORMAT_R8_UNORM first plane
-//DXGI_FORMAT_R8G8_UNORM second plane
+
         hr = m_pD3DDevice->CreateCommittedResource(&m_pStagingProp, D3D12_HEAP_FLAG_NONE,
             &m_pStagingDesc, D3D12_RESOURCE_STATE_COPY_DEST, NULL,//D3D12_RESOURCE_STATE_GENERIC_READ
             IID_ID3D12Resource, (void**)&m_pStagingTexture);
 
         if (FAILED(hr))
             assert(0);
-
-        //picQuad->CreateShaderView(m_pD3DDevice, m_pTexture[index], m_pStagingLayout);
-
-        //m_pStagingTexture
     }
     return hr;
 
@@ -1060,7 +848,7 @@ HRESULT CDecD3D12::DeliverD3D12ReadbackDirect(LAVFrame *pFrame)
     UINT64 rowsizes[2] = {};
     UINT64 totalbytes = 0;
     D3D12_FEATURE_DATA_FORMAT_INFO info;
-    UpdateStaging(outputindex);
+    UpdateStaging();
     
     info.Format = DXGI_FORMAT_NV12;
     m_pD3DDevice->CheckFeatureSupport(D3D12_FEATURE_FORMAT_INFO, &info, sizeof(info));

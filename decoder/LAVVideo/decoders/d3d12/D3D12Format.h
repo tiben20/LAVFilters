@@ -208,6 +208,13 @@ const cie1931_primaries COLOR_PRIMARIES_BT601_525_S[] = { {0.630,0.340},{0.310, 
 #undef CIE_C
 };*/
 
+typedef struct
+{
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT layoutplane[2];
+    UINT64 pitch_plane[2];
+    UINT rows_plane[2];
+    UINT64 RequiredSize;
+} d3d12_footprint_t;
 
 typedef struct
 {

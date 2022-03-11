@@ -114,10 +114,7 @@
     <ClCompile Include="decoders\d3d12dec.cpp" />
     <ClCompile Include="decoders\d3d12\D3D12Commands.cpp" />
     <ClCompile Include="decoders\d3d12\D3D12Format.cpp" />
-    <ClCompile Include="decoders\d3d12\D3D12Quad.cpp" />
-    <ClCompile Include="decoders\d3d12\D3D12Shaders.cpp" />
     <ClCompile Include="decoders\d3d12\D3D12SurfaceAllocator.cpp" />
-    <ClCompile Include="decoders\d3d12\D3D12SwapChain.cpp" />
     <ClCompile Include="decoders\dxva2dec.cpp" />
     <ClCompile Include="decoders\dxva2\DXVA2SurfaceAllocator.cpp" />
     <ClCompile Include="decoders\dxva2\dxva_common.cpp" />
@@ -172,10 +169,7 @@
     <ClInclude Include="decoders\d3d12dec.h" />
     <ClInclude Include="decoders\d3d12\D3D12Commands.h" />
     <ClInclude Include="decoders\d3d12\D3D12Format.h" />
-    <ClInclude Include="decoders\d3d12\D3D12Quad.h" />
-    <ClInclude Include="decoders\d3d12\D3D12Shaders.h" />
     <ClInclude Include="decoders\d3d12\D3D12SurfaceAllocator.h" />
-    <ClInclude Include="decoders\d3d12\D3D12SwapChain.h" />
     <ClInclude Include="decoders\DecBase.h" />
     <ClInclude Include="decoders\dxva2dec.h" />
     <ClInclude Include="decoders\dxva2\DXVA2SurfaceAllocator.h" />

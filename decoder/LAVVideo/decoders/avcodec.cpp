@@ -796,8 +796,8 @@ STDMETHODIMP CDecAvcodec::DestroyDecoder()
     m_nFFBufferSize = 0;
 
     if (m_pSwsContext)
-      
-    {  sws_freeContext(m_pSwsContext);
+    {
+        sws_freeContext(m_pSwsContext);
         m_pSwsContext = nullptr;
     }
 
