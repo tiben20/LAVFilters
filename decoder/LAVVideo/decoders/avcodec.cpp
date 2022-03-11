@@ -1465,7 +1465,7 @@ STDMETHODIMP CDecAvcodec::Flush()
     m_tcBFrameDelay[1].rtStart = m_tcBFrameDelay[1].rtStop = AV_NOPTS_VALUE;
 
     if (!(m_pCallback->GetDecodeFlags() & LAV_VIDEO_DEC_FLAG_DVD) &&
-        (m_nCodecId == AV_CODEC_ID_H264 || m_nCodecId == AV_CODEC_ID_MPEG2VIDEO))
+        ((m_nCodecId == AV_CODEC_ID_H264 || m_nCodecId == AV_CODEC_ID_MPEG2VIDEO) && m_pAVCtx->pix_fmt != AV_PIX_FMT_D3D12_VLD))
     {
         CDecAvcodec::InitDecoder(m_nCodecId, &m_pCallback->GetInputMediaType());
     }
