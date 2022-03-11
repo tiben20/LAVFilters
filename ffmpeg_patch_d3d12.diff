@@ -1,0 +1,2117 @@
+ configure                          |  18 ++++
+ libavcodec/Makefile                |   3 +
+ libavcodec/arm/hevcdsp_idct_neon.S |   2 +-
+ libavcodec/d3d11va.h               |   1 +
+ libavcodec/d3d12va.c               |  47 ++++++++
+ libavcodec/d3d12va.h               |  98 +++++++++++++++++
+ libavcodec/decode.c                |   5 +-
+ libavcodec/dxva2.c                 | 213 +++++++++++++++++++++++++++++++++++--
+ libavcodec/dxva2.h                 |   1 +
+ libavcodec/dxva2_h264.c            |  85 ++++++++++++++-
+ libavcodec/dxva2_hevc.c            | 163 ++++++++++++++++++++++++++--
+ libavcodec/dxva2_internal.h        |  62 ++++++++---
+ libavcodec/dxva2_mpeg2.c           | 107 +++++++++++++++++--
+ libavcodec/dxva2_vc1.c             | 114 +++++++++++++++++++-
+ libavcodec/dxva2_vp9.c             |  75 +++++++++++++
+ libavcodec/h2645_parse.c           |   4 +-
+ libavcodec/h264_slice.c            |  10 +-
+ libavcodec/h264dec.c               |   3 +
+ libavcodec/hevcdec.c               |  40 +++++++
+ libavcodec/hwaccels.h              |   5 +
+ libavcodec/hwconfig.h              |   2 +
+ libavcodec/mpeg12dec.c             |   6 ++
+ libavcodec/vc1dec.c                |   9 ++
+ libavcodec/version.h               | 101 +++++++++++++++---
+ libavcodec/vp9.c                   |   6 ++
+ libavutil/pixdesc.c                |   6 ++
+ libavutil/pixfmt.h                 |   5 +
+ 27 files changed, 1130 insertions(+), 61 deletions(-)
+
+diff --git a/configure b/configure
+index bbb6fee978..7be1afb495 100755
+--- a/configure
++++ b/configure
+@@ -335,6 +335,7 @@ External library support:
+   --disable-cuda-llvm      disable CUDA compilation using clang [autodetect]
+   --disable-cuvid          disable Nvidia CUVID support [autodetect]
+   --disable-d3d11va        disable Microsoft Direct3D 11 video acceleration code [autodetect]
++  --disable-d3d12        disable Microsoft Direct3D 12 video acceleration code [autodetect]
+   --disable-dxva2          disable Microsoft DirectX 9 video acceleration code [autodetect]
+   --disable-ffnvcodec      disable dynamically linked Nvidia code [autodetect]
+   --enable-libdrm          enable DRM code (Linux) [no]
+@@ -1890,6 +1891,7 @@ HWACCEL_AUTODETECT_LIBRARY_LIST="
+     cuda_llvm
+     cuvid
+     d3d11va
++    d3d12
+     dxva2
+     ffnvcodec
+     nvdec
+@@ -2181,6 +2183,7 @@ HEADERS_LIST="
+     dirent_h
+     dxgidebug_h
+     dxva_h
++    d3d12video_h
+     ES2_gl_h
+     gsm_h
+     io_h
+@@ -2997,6 +3000,7 @@ crystalhd_deps="libcrystalhd_libcrystalhd_if_h"
+ cuda_deps="ffnvcodec"
+ cuvid_deps="ffnvcodec"
+ d3d11va_deps="dxva_h ID3D11VideoDecoder ID3D11VideoContext"
++d3d12_deps="dxva_h"
+ dxva2_deps="dxva2api_h DXVA2_ConfigPictureDecode ole32 user32"
+ ffnvcodec_deps_any="libdl LoadLibrary"
+ nvdec_deps="ffnvcodec"
+@@ -3024,6 +3028,8 @@ h264_d3d11va_hwaccel_deps="d3d11va"
+ h264_d3d11va_hwaccel_select="h264_decoder"
+ h264_d3d11va2_hwaccel_deps="d3d11va"
+ h264_d3d11va2_hwaccel_select="h264_decoder"
++h264_d3d12_hwaccel_deps="d3d12"
++h264_d3d12_hwaccel_select="h264_decoder"
+ h264_dxva2_hwaccel_deps="dxva2"
+ h264_dxva2_hwaccel_select="h264_decoder"
+ h264_nvdec_hwaccel_deps="nvdec"
+@@ -3038,6 +3044,8 @@ hevc_d3d11va_hwaccel_deps="d3d11va"
+ hevc_d3d11va_hwaccel_select="hevc_decoder"
+ hevc_d3d11va2_hwaccel_deps="d3d11va"
+ hevc_d3d11va2_hwaccel_select="hevc_decoder"
++hevc_d3d12_hwaccel_deps="d3d12"
++hevc_d3d12_hwaccel_select="hevc_decoder"
+ hevc_dxva2_hwaccel_deps="dxva2"
+ hevc_dxva2_hwaccel_select="hevc_decoder"
+ hevc_nvdec_hwaccel_deps="nvdec"
+@@ -3066,6 +3074,8 @@ mpeg2_d3d11va_hwaccel_deps="d3d11va"
+ mpeg2_d3d11va_hwaccel_select="mpeg2video_decoder"
+ mpeg2_d3d11va2_hwaccel_deps="d3d11va"
+ mpeg2_d3d11va2_hwaccel_select="mpeg2video_decoder"
++mpeg2_d3d12_hwaccel_deps="d3d12"
++mpeg2_d3d12_hwaccel_select="mpeg2video_decoder"
+ mpeg2_dxva2_hwaccel_deps="dxva2"
+ mpeg2_dxva2_hwaccel_select="mpeg2video_decoder"
+ mpeg2_nvdec_hwaccel_deps="nvdec"
+@@ -3094,6 +3104,8 @@ vc1_d3d11va2_hwaccel_deps="d3d11va"
+ vc1_d3d11va2_hwaccel_select="vc1_decoder"
+ vc1_dxva2_hwaccel_deps="dxva2"
+ vc1_dxva2_hwaccel_select="vc1_decoder"
++vc1_d3d12_hwaccel_deps="d3d12"
++vc1_d3d12_hwaccel_select="vc1_decoder"
+ vc1_nvdec_hwaccel_deps="nvdec"
+ vc1_nvdec_hwaccel_select="vc1_decoder"
+ vc1_vaapi_hwaccel_deps="vaapi"
+@@ -3108,6 +3120,8 @@ vp9_d3d11va_hwaccel_deps="d3d11va"
+ vp9_d3d11va_hwaccel_select="vp9_decoder"
+ vp9_d3d11va2_hwaccel_deps="d3d11va"
+ vp9_d3d11va2_hwaccel_select="vp9_decoder"
++vp9_d3d12_hwaccel_deps="d3d12"
++vp9_d3d12_hwaccel_select="vp9_decoder"
+ vp9_dxva2_hwaccel_deps="dxva2"
+ vp9_dxva2_hwaccel_select="vp9_decoder"
+ vp9_nvdec_hwaccel_deps="nvdec"
+@@ -3120,6 +3134,7 @@ vp9_videotoolbox_hwaccel_deps="videotoolbox"
+ vp9_videotoolbox_hwaccel_select="vp9_decoder"
+ wmv3_d3d11va_hwaccel_select="vc1_d3d11va_hwaccel"
+ wmv3_d3d11va2_hwaccel_select="vc1_d3d11va2_hwaccel"
++wmv3_d3d12_hwaccel_select="vc1_d3d12_hwaccel"
+ wmv3_dxva2_hwaccel_select="vc1_dxva2_hwaccel"
+ wmv3_nvdec_hwaccel_select="vc1_nvdec_hwaccel"
+ wmv3_vaapi_hwaccel_select="vc1_vaapi_hwaccel"
+@@ -6295,6 +6310,7 @@ check_headers dirent.h
+ check_headers dxgidebug.h
+ check_headers dxva.h
+ check_headers dxva2api.h -D_WIN32_WINNT=0x0600
++check_headers d3d12video.h
+ check_headers io.h
+ enabled libdrm &&
+     check_headers linux/dma-buf.h
+@@ -6381,6 +6397,8 @@ check_type "windows.h dxva.h" "DXVA_PicParams_HEVC" -DWINAPI_FAMILY=WINAPI_FAMIL
+ check_type "windows.h dxva.h" "DXVA_PicParams_VP9" -DWINAPI_FAMILY=WINAPI_FAMILY_DESKTOP_APP -D_CRT_BUILD_DESKTOP_APP=0
+ check_type "windows.h d3d11.h" "ID3D11VideoDecoder"
+ check_type "windows.h d3d11.h" "ID3D11VideoContext"
++check_type "windows.h d3d12video.h" "ID3D12VideoDevice"
++check_type "windows.h d3d12video.h" "ID3D12VideoDecoder"
+ check_type "d3d9.h dxva2api.h" DXVA2_ConfigPictureDecode -D_WIN32_WINNT=0x0602
+ check_func_headers mfapi.h MFCreateAlignedMemoryBuffer -lmfplat
+ 
+diff --git a/libavcodec/Makefile b/libavcodec/Makefile
+index e048a1c377..82d077c965 100644
+--- a/libavcodec/Makefile
++++ b/libavcodec/Makefile
+@@ -12,6 +12,7 @@ HEADERS = ac3_parser.h                                                  \
+           codec_id.h                                                    \
+           codec_par.h                                                   \
+           d3d11va.h                                                     \
++          d3d12va.h                                                     \
+           defs.h                                                        \
+           dirac.h                                                       \
+           dv_profile.h                                                  \
+@@ -38,6 +39,7 @@ OBJS = ac3_parser.o                                                     \
+        codec_desc.o                                                     \
+        codec_par.o                                                      \
+        d3d11va.o                                                        \
++	   d3d12va.o                                                        \
+        decode.o                                                         \
+        dirac.o                                                          \
+        dv_profile.o                                                     \
+@@ -1205,6 +1207,7 @@ SKIPHEADERS                            += %_tablegen.h                  \
+ 
+ SKIPHEADERS-$(CONFIG_AMF)              += amfenc.h
+ SKIPHEADERS-$(CONFIG_D3D11VA)          += d3d11va.h dxva2_internal.h
++SKIPHEADERS-$(CONFIG_D3D12)            += d3d12va.h dxva2_internal.h
+ SKIPHEADERS-$(CONFIG_DXVA2)            += dxva2.h dxva2_internal.h
+ SKIPHEADERS-$(CONFIG_JNI)              += ffjni.h
+ SKIPHEADERS-$(CONFIG_LIBVPX)           += libvpx.h
+diff --git a/libavcodec/arm/hevcdsp_idct_neon.S b/libavcodec/arm/hevcdsp_idct_neon.S
+index 75795e6a6a..e503ffba91 100644
+--- a/libavcodec/arm/hevcdsp_idct_neon.S
++++ b/libavcodec/arm/hevcdsp_idct_neon.S
+@@ -958,8 +958,8 @@ endfunc
+ tr_16x4 firstpass, 7, 512, 1
+ tr_16x4 secondpass_8, 20 - 8, 512, 1
+ tr_16x4 secondpass_10, 20 - 10, 512, 1
+-tr_16x4 noscale, 0, 2048, 4
+ .ltorg
++tr_16x4 noscale, 0, 2048, 4
+ tr_32x4 firstpass, 7
+ tr_32x4 secondpass_8, 20 - 8
+ tr_32x4 secondpass_10, 20 - 10
+diff --git a/libavcodec/d3d11va.h b/libavcodec/d3d11va.h
+index 6816b6c1e6..68a69c372d 100644
+--- a/libavcodec/d3d11va.h
++++ b/libavcodec/d3d11va.h
+@@ -47,6 +47,7 @@
+ 
+ #define FF_DXVA2_WORKAROUND_SCALING_LIST_ZIGZAG 1 ///< Work around for Direct3D11 and old UVD/UVD+ ATI video cards
+ #define FF_DXVA2_WORKAROUND_INTEL_CLEARVIDEO    2 ///< Work around for Direct3D11 and old Intel GPUs with ClearVideo interface
++#define FF_DXVA2_WORKAROUND_HEVC_REXT           4 ///< Signal the D3D11VA decoder is using the HEVC Rext picture structure
+ 
+ /**
+  * This structure is used to provides the necessary configurations and data
+diff --git a/libavcodec/d3d12va.c b/libavcodec/d3d12va.c
+new file mode 100644
+index 0000000000..5ccda5eea5
+--- /dev/null
++++ b/libavcodec/d3d12va.c
+@@ -0,0 +1,47 @@
++/*
++ * Direct3D12 HW acceleration
++ *
++ * copyright (c) 2021 Steve Lhomme
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include <stddef.h>
++
++#include "config.h"
++
++#if CONFIG_D3D12
++#include "libavutil/error.h"
++#include "libavutil/mem.h"
++
++#include "d3d12va.h"
++
++AVD3D12VAContext *av_d3d12va_alloc_context(void)
++{
++    AVD3D12VAContext* res = av_mallocz(sizeof(AVD3D12VAContext));
++    if (!res)
++        return NULL;
++    return res;
++}
++#else /* !CONFIG_D3D12 */
++struct AVD3D12VAContext *av_d3d12va_alloc_context(void);
++
++struct AVD3D12VAContext *av_d3d12va_alloc_context(void)
++{
++    return NULL;
++}
++#endif /* !CONFIG_D3D12 */
+diff --git a/libavcodec/d3d12va.h b/libavcodec/d3d12va.h
+new file mode 100644
+index 0000000000..c89dba5da1
+--- /dev/null
++++ b/libavcodec/d3d12va.h
+@@ -0,0 +1,98 @@
++/*
++ * Direct3D12 HW acceleration
++ *
++ * copyright (c) 2009 Laurent Aimar
++ * copyright (c) 2015-2021 Steve Lhomme
++ *
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#ifndef AVCODEC_D3D12VA_H
++#define AVCODEC_D3D12VA_H
++
++/**
++ * @file
++ * @ingroup lavc_codec_hwaccel_d3d12va
++ * Public libavcodec D3D12VA header.
++ */
++
++#if !defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0A00
++#undef _WIN32_WINNT
++#define _WIN32_WINNT 0x0A00
++#endif
++
++#include <stdint.h>
++#include <d3d12.h>
++#include <d3d12video.h>
++
++/**
++ * @defgroup lavc_codec_hwaccel_d3d12va Direct3D12
++ * @ingroup lavc_codec_hwaccel
++ *
++ * @{
++ */
++
++#define FF_DXVA2_WORKAROUND_HEVC_REXT           4 ///< Signal the D3D11VA decoder is using the HEVC Rext picture structure
++
++/**
++ * This structure is used to provides the necessary configurations and data
++ * to the Direct3D12 FFmpeg HWAccel implementation.
++ *
++ * The application must make it available as AVCodecContext.hwaccel_context.
++ *
++ * Use av_d3d11va_alloc_context() exclusively to allocate an AVD3D12VAContext.
++ */
++typedef struct AVD3D12VAContext {
++    /**
++     * D3D12 decoder object
++     */
++    ID3D12VideoDecoder *decoder;
++
++    /**
++     * The Direct3D surfaces used to output pictures and used for reference buffers.
++     * Only Texture2DArray supported for the moment (works with Tier1 and Tier2).
++     */
++    D3D12_VIDEO_DECODE_REFERENCE_FRAMES surfaces;
++
++    /**
++     * Heap format used to create the surfaces
++     */
++    const D3D12_VIDEO_DECODER_HEAP_DESC *cfg;
++
++    /**
++     * A bit field configuring the workarounds needed for using the decoder
++     */
++    uint64_t workaround;
++
++    /**
++     * Private to the FFmpeg AVHWAccel implementation
++     */
++    unsigned report_id;
++} AVD3D12VAContext;
++
++/**
++ * Allocate an AVD3D12VAContext.
++ *
++ * @return Newly-allocated AVD3D12VAContext or NULL on failure.
++ */
++AVD3D12VAContext *av_d3d12va_alloc_context(void);
++
++/**
++ * @}
++ */
++
++#endif /* AVCODEC_D3D12VA_H */
+diff --git a/libavcodec/decode.c b/libavcodec/decode.c
+index d214133dd2..a0b1796e4f 100644
+--- a/libavcodec/decode.c
++++ b/libavcodec/decode.c
+@@ -1042,8 +1042,9 @@ static int hwaccel_init(AVCodecContext *avctx,
+ {
+     const AVHWAccel *hwaccel;
+     int err;
+-
++	av_log(NULL, AV_LOG_DEBUG, "hwaccel_init at %s:%d\n", __FILE__, __LINE__);
+     hwaccel = hw_config->hwaccel;
++	av_log(avctx,AV_LOG_DEBUG,"hwaccel name %s",hwaccel->name);
+     if (hwaccel->capabilities & AV_HWACCEL_CODEC_CAP_EXPERIMENTAL &&
+         avctx->strict_std_compliance > FF_COMPLIANCE_EXPERIMENTAL) {
+         av_log(avctx, AV_LOG_WARNING, "Ignoring experimental hwaccel: %s\n",
+@@ -1061,6 +1062,7 @@ static int hwaccel_init(AVCodecContext *avctx,
+     avctx->hwaccel = hwaccel;
+     if (hwaccel->init) {
+         err = hwaccel->init(avctx);
++		av_log(avctx,AV_LOG_ERROR,"hwaccel name %s",hwaccel->name);
+         if (err < 0) {
+             av_log(avctx, AV_LOG_ERROR, "Failed setup for format %s: "
+                    "hwaccel initialisation returned error.\n",
+@@ -1088,6 +1090,7 @@ static void hwaccel_uninit(AVCodecContext *avctx)
+ 
+ int ff_get_format(AVCodecContext *avctx, const enum AVPixelFormat *fmt)
+ {
++	//av_log(NULL, AV_LOG_DEBUG, "debug at %s:%d\n", __FILE__, __LINE__);
+     const AVPixFmtDescriptor *desc;
+     enum AVPixelFormat *choices;
+     enum AVPixelFormat ret, user_choice;
+diff --git a/libavcodec/dxva2.c b/libavcodec/dxva2.c
+index 9c7ee62754..cc641b4122 100644
+--- a/libavcodec/dxva2.c
++++ b/libavcodec/dxva2.c
+@@ -101,9 +101,8 @@ static const dxva_mode dxva_modes[] = {
+     { &ff_DXVA2_ModeVP9_VLD_Profile0,       AV_CODEC_ID_VP9, prof_vp9_profile0 },
+     { &ff_DXVA2_ModeVP9_VLD_10bit_Profile2, AV_CODEC_ID_VP9, prof_vp9_profile2 },
+ 
+-    /* AV1 */
+-    { &ff_DXVA2_ModeAV1_VLD_Profile0,       AV_CODEC_ID_AV1, prof_av1_profile0 },
+-
++	/* AV1 */    
++	{ &ff_DXVA2_ModeAV1_VLD_Profile0,       AV_CODEC_ID_AV1, prof_av1_profile0 },
+     { NULL,                          0 },
+ };
+ 
+@@ -662,7 +661,68 @@ int ff_dxva2_decode_init(AVCodecContext *avctx)
+ 
+     // Old API.
+     if (avctx->hwaccel_context)
++    {
++#if CONFIG_D3D12
++        if (avctx->hwaccel->pix_fmt == AV_PIX_FMT_D3D12_VLD) {
++            ret = -1;
++
++            struct AVD3D12VAContext *d3d12 = avctx->hwaccel_context;
++            HRESULT hr;
++            ID3D12VideoDevice *d3d12_video_device = NULL;
++            hr = ID3D12VideoDecoder_GetDevice(d3d12->decoder, &IID_ID3D12Device1, (void**)&sctx->d3d12_device);
++            if (FAILED(hr))
++                goto fail;
++
++            hr = ID3D12VideoDecoder_GetDevice(d3d12->decoder, &IID_ID3D12VideoDevice, (void**)&d3d12_video_device);
++            if (FAILED(hr))
++                goto d3d12_done;
++
++            hr = ID3D12Device1_CreateFence(sctx->d3d12_device, 0, D3D12_FENCE_FLAG_NONE, &IID_ID3D12Fence, (void**)&sctx->d3dRenderFence);
++            if (FAILED(hr))
++                goto d3d12_done;
++
++            sctx->fenceReached = CreateEvent(NULL, TRUE, FALSE, NULL);
++            if (sctx->fenceReached == NULL)
++                goto d3d12_done;
++
++            hr = ID3D12Device1_CreateCommandAllocator(sctx->d3d12_device, D3D12_COMMAND_LIST_TYPE_VIDEO_DECODE,
++                                                      &IID_ID3D12CommandAllocator, (void**)&sctx->d3d12_cmd_allocator);
++            if (FAILED(hr))
++                goto d3d12_done;
++
++            hr = ID3D12Device1_CreateCommandList(sctx->d3d12_device, 0, D3D12_COMMAND_LIST_TYPE_VIDEO_DECODE,
++                                                 sctx->d3d12_cmd_allocator, NULL,
++                                                 &IID_ID3D12VideoDecodeCommandList, (void**)&sctx->d3d12_cmd_list);
++            if (FAILED(hr))
++                goto d3d12_done;
++
++            // a command list is recording commands by default
++            hr = ID3D12VideoDecodeCommandList_Close(sctx->d3d12_cmd_list);
++            if (FAILED(hr))
++                goto d3d12_done;
++
++            D3D12_COMMAND_QUEUE_DESC queueDesc = {
++                .NodeMask = 0 ,
++                .Flags = D3D12_COMMAND_QUEUE_FLAG_NONE,
++                .Type = D3D12_COMMAND_LIST_TYPE_VIDEO_DECODE,
++            };
++            hr = ID3D12Device1_CreateCommandQueue(sctx->d3d12_device, &queueDesc, &IID_ID3D12CommandQueue, (void**)&sctx->d3d12_cmd_queue);
++            if (FAILED(hr))
++                goto d3d12_done;
++
++            hr = ID3D12VideoDevice_CreateVideoDecoderHeap(d3d12_video_device, d3d12->cfg, &IID_ID3D12VideoDecoderHeap, (void**)&sctx->d3d12_decoder_heap);
++            if (FAILED(hr))
++                goto d3d12_done;
++
++d3d12_done:
++            if (d3d12_video_device)
++                ID3D12VideoDevice_Release(d3d12_video_device);
++            if (FAILED(hr))
++                goto fail;
++        }
++#endif
+         return 0;
++    }
+ 
+     // (avctx->pix_fmt is not updated yet at this point)
+     sctx->pix_fmt = avctx->hwaccel->pix_fmt;
+@@ -747,6 +807,26 @@ int ff_dxva2_decode_uninit(AVCodecContext *avctx)
+         IDirectXVideoDecoderService_Release(sctx->dxva2_service);
+ #endif
+ 
++#if CONFIG_D3D12
++    if (sctx->d3d12_decoder_heap)
++        ID3D12VideoDecoderHeap_Release(sctx->d3d12_decoder_heap);
++
++    if (sctx->fenceReached)
++        CloseHandle(sctx->fenceReached);
++    if (sctx->d3dRenderFence)
++        ID3D12Fence_Release(sctx->d3dRenderFence);
++
++    if (sctx->d3d12_cmd_queue)
++        ID3D12CommandQueue_Release(sctx->d3d12_cmd_queue);
++    if (sctx->d3d12_cmd_allocator)
++        ID3D12CommandAllocator_Release(sctx->d3d12_cmd_allocator);
++    if (sctx->d3d12_cmd_list)
++        ID3D12VideoDecodeCommandList_Release(sctx->d3d12_cmd_list);
++
++    if (sctx->d3d12_device)
++        ID3D12Device1_Release(sctx->d3d12_device);
++#endif
++
+     return 0;
+ }
+ 
+@@ -788,6 +868,10 @@ unsigned ff_dxva2_get_surface_index(const AVCodecContext *avctx,
+             return i;
+     }
+ #endif
++#if CONFIG_D3D12
++    if (avctx->pix_fmt == AV_PIX_FMT_D3D12_VLD)
++        return (uintptr_t)surface;
++#endif
+ 
+     assert(0);
+     return 0;
+@@ -815,6 +899,17 @@ int ff_dxva2_commit_buffer(AVCodecContext *avctx,
+     if (avctx->pix_fmt == AV_PIX_FMT_DXVA2_VLD)
+         hr = IDirectXVideoDecoder_GetBuffer(DXVA2_CONTEXT(ctx)->decoder, type,
+                                             &dxva_data, &dxva_size);
++#endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx))
++    {
++        D3D12_VIDEO_DECODE_FRAME_ARGUMENT *dsc12 = dsc;
++        dsc12->Type = type;
++        dsc12->Size = size;
++        dxva_size = size;
++        dsc12->pData = dxva_data = malloc(dxva_size);
++        hr = (dxva_data == NULL) ? E_FAIL : S_OK;
++    }
+ #endif
+     if (FAILED(hr)) {
+         av_log(avctx, AV_LOG_ERROR, "Failed to get a buffer for %u: 0x%x\n",
+@@ -848,7 +943,6 @@ int ff_dxva2_commit_buffer(AVCodecContext *avctx,
+         av_log(avctx, AV_LOG_ERROR, "Buffer for type %u was too small\n", type);
+         result = -1;
+     }
+-
+ #if CONFIG_D3D11VA
+     if (ff_dxva2_is_d3d11(avctx))
+         hr = ID3D11VideoContext_ReleaseDecoderBuffer(D3D11VA_CONTEXT(ctx)->video_context, D3D11VA_CONTEXT(ctx)->decoder, type);
+@@ -856,6 +950,10 @@ int ff_dxva2_commit_buffer(AVCodecContext *avctx,
+ #if CONFIG_DXVA2
+     if (avctx->pix_fmt == AV_PIX_FMT_DXVA2_VLD)
+         hr = IDirectXVideoDecoder_ReleaseBuffer(DXVA2_CONTEXT(ctx)->decoder, type);
++#endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx))
++        hr = S_OK;
+ #endif
+     if (FAILED(hr)) {
+         av_log(avctx, AV_LOG_ERROR,
+@@ -869,7 +967,6 @@ int ff_dxva2_commit_buffer(AVCodecContext *avctx,
+ static int frame_add_buf(AVFrame *frame, AVBufferRef *ref)
+ {
+     int i;
+-
+     for (i = 0; i < AV_NUM_DATA_POINTERS; i++) {
+         if (!frame->buf[i]) {
+             frame->buf[i] = av_buffer_ref(ref);
+@@ -896,6 +993,9 @@ int ff_dxva2_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
+ #endif
+ #if CONFIG_DXVA2
+     DXVA2_DecodeBufferDesc          buffer2[4];
++#endif
++#if CONFIG_D3D12
++    D3D12_VIDEO_DECODE_INPUT_STREAM_ARGUMENTS buffer12;
+ #endif
+     DECODER_BUFFER_DESC             *buffer = NULL, *buffer_slice = NULL;
+     int result, runs = 0;
+@@ -922,6 +1022,10 @@ int ff_dxva2_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
+             hr = IDirectXVideoDecoder_BeginFrame(DXVA2_CONTEXT(ctx)->decoder,
+                                                  get_surface(avctx, frame),
+                                                  NULL);
++#endif
++#if CONFIG_D3D12
++        if (ff_dxva2_is_d3d12(avctx))
++            hr = S_OK;
+ #endif
+         if (hr != E_PENDING || ++runs > 50)
+             break;
+@@ -941,6 +1045,12 @@ int ff_dxva2_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
+         type = D3D11_VIDEO_DECODER_BUFFER_PICTURE_PARAMETERS;
+     }
+ #endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        buffer = &buffer12.FrameArguments[buffer_count];
++        type = D3D12_VIDEO_DECODE_ARGUMENT_TYPE_PICTURE_PARAMETERS;
++    }
++#endif
+ #if CONFIG_DXVA2
+     if (avctx->pix_fmt == AV_PIX_FMT_DXVA2_VLD) {
+         buffer = &buffer2[buffer_count];
+@@ -969,6 +1079,12 @@ int ff_dxva2_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
+             buffer = &buffer2[buffer_count];
+             type = DXVA2_InverseQuantizationMatrixBufferType;
+         }
++#endif
++#if CONFIG_D3D12
++        if (ff_dxva2_is_d3d12(avctx)) {
++            buffer = &buffer12.FrameArguments[buffer_count];
++            type = D3D12_VIDEO_DECODE_ARGUMENT_TYPE_INVERSE_QUANTIZATION_MATRIX;
++        }
+ #endif
+         result = ff_dxva2_commit_buffer(avctx, ctx, buffer,
+                                         type,
+@@ -985,12 +1101,21 @@ int ff_dxva2_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
+     if (ff_dxva2_is_d3d11(avctx)) {
+         buffer       = &buffer11[buffer_count + 0];
+         buffer_slice = &buffer11[buffer_count + 1];
++        buffer_count += 2;
+     }
+ #endif
+ #if CONFIG_DXVA2
+     if (avctx->pix_fmt == AV_PIX_FMT_DXVA2_VLD) {
+         buffer       = &buffer2[buffer_count + 0];
+         buffer_slice = &buffer2[buffer_count + 1];
++        buffer_count += 2;
++    }
++#endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        buffer       = &buffer12.CompressedBitstream;
++        buffer_slice = &buffer12.FrameArguments[buffer_count];
++        buffer_count += 1;
+     }
+ #endif
+ 
+@@ -1002,7 +1127,6 @@ int ff_dxva2_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
+                "Failed to add bitstream or slice control buffer\n");
+         goto end;
+     }
+-    buffer_count += 2;
+ 
+     /* TODO Film Grain when possible */
+ 
+@@ -1023,6 +1147,13 @@ int ff_dxva2_common_end_frame(AVCodecContext *avctx, AVFrame *frame,
+         };
+         hr = IDirectXVideoDecoder_Execute(DXVA2_CONTEXT(ctx)->decoder, &exec);
+     }
++#endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        buffer12.NumFrameArguments = buffer_count;
++        buffer12.pHeap = sctx->d3d12_decoder_heap;
++        hr = S_OK;
++    }
+ #endif
+     if (FAILED(hr)) {
+         av_log(avctx, AV_LOG_ERROR, "Failed to execute: 0x%x\n", (unsigned)hr);
+@@ -1037,6 +1168,68 @@ end:
+ #if CONFIG_DXVA2
+     if (avctx->pix_fmt == AV_PIX_FMT_DXVA2_VLD)
+         hr = IDirectXVideoDecoder_EndFrame(DXVA2_CONTEXT(ctx)->decoder, NULL);
++#endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        ID3D12VideoDecodeCommandList_Reset(sctx->d3d12_cmd_list, sctx->d3d12_cmd_allocator);
++        uintptr_t out_index = (uintptr_t)get_surface(avctx, frame);
++        memcpy(&buffer12.ReferenceFrames, &ctx->d3d12.surfaces, sizeof(buffer12.ReferenceFrames));
++        D3D12_VIDEO_DECODE_OUTPUT_STREAM_ARGUMENTS output = {
++            .pOutputTexture2D = ctx->d3d12.surfaces.ppTexture2Ds[out_index],
++            /*.OutputSubresource= ctx->d3d12.surfaces.pSubresources[out_index],*/
++            .OutputSubresource= 0,
++        };
++        av_log(avctx, AV_LOG_DEBUG, "Output surface d3d12 %d\n", (int)out_index);
++        D3D12_RESOURCE_BARRIER barrier = {
++            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
++            .Transition.pResource = output.pOutputTexture2D,
++            .Transition.Subresource = output.OutputSubresource,
++            .Transition.StateBefore = D3D12_RESOURCE_STATE_VIDEO_DECODE_READ,
++            .Transition.StateAfter = D3D12_RESOURCE_STATE_VIDEO_DECODE_WRITE,
++        };
++        ID3D12VideoDecodeCommandList_ResourceBarrier(sctx->d3d12_cmd_list, 1, &barrier );
++        ID3D12VideoDecodeCommandList_DecodeFrame(sctx->d3d12_cmd_list,
++                                                 D3D12_CONTEXT(ctx)->decoder,
++                                                 &output, &buffer12);
++
++        ID3D12VideoDecodeCommandList_Close(sctx->d3d12_cmd_list);
++        ID3D12CommandQueue_ExecuteCommandLists(sctx->d3d12_cmd_queue, 1, (ID3D12CommandList**) &sctx->d3d12_cmd_list);
++
++        if (sctx->fenceCounter == UINT64_MAX)
++            sctx->fenceCounter = 0;
++        else
++            sctx->fenceCounter++;
++        ResetEvent(sctx->fenceReached);
++        ID3D12Fence_SetEventOnCompletion(sctx->d3dRenderFence, sctx->fenceCounter, sctx->fenceReached);
++        ID3D12CommandQueue_Signal(sctx->d3d12_cmd_queue, sctx->d3dRenderFence, sctx->fenceCounter);
++
++        WaitForSingleObject(sctx->fenceReached, INFINITE);
++        ID3D12VideoDecodeCommandList_Reset(sctx->d3d12_cmd_list, sctx->d3d12_cmd_allocator);
++        D3D12_RESOURCE_BARRIER barrier2 = {
++            .Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
++            .Transition.pResource = output.pOutputTexture2D,
++            .Transition.Subresource = output.OutputSubresource,
++            .Transition.StateBefore = D3D12_RESOURCE_STATE_VIDEO_DECODE_WRITE,
++            .Transition.StateAfter = D3D12_RESOURCE_STATE_VIDEO_DECODE_READ,
++        };
++        ID3D12VideoDecodeCommandList_ResourceBarrier(sctx->d3d12_cmd_list, 1, &barrier2 );
++        ID3D12VideoDecodeCommandList_Close(sctx->d3d12_cmd_list);
++        ID3D12CommandQueue_ExecuteCommandLists(sctx->d3d12_cmd_queue, 1, (ID3D12CommandList**) &sctx->d3d12_cmd_list);
++
++        if (sctx->fenceCounter == UINT64_MAX)
++            sctx->fenceCounter = 0;
++        else
++            sctx->fenceCounter++;
++        ResetEvent(sctx->fenceReached);
++        ID3D12Fence_SetEventOnCompletion(sctx->d3dRenderFence, sctx->fenceCounter, sctx->fenceReached);
++        ID3D12CommandQueue_Signal(sctx->d3d12_cmd_queue, sctx->d3dRenderFence, sctx->fenceCounter);
++        WaitForSingleObject(sctx->fenceReached, INFINITE);
++
++        for (size_t f = 0; f < buffer12.NumFrameArguments; f++)
++            free(buffer12.FrameArguments[f].pData);
++        ID3D12Resource_Release(buffer12.CompressedBitstream.pBuffer);
++        hr = S_OK;
++    }
+ #endif
+     ff_dxva2_unlock(avctx);
+     if (FAILED(hr)) {
+@@ -1055,3 +1248,11 @@ int ff_dxva2_is_d3d11(const AVCodecContext *avctx)
+     else
+         return 0;
+ }
++
++int ff_dxva2_is_d3d12(const AVCodecContext *avctx)
++{
++    if (CONFIG_D3D12)
++        return avctx->pix_fmt == AV_PIX_FMT_D3D12_VLD;
++    else
++        return 0;
++}
+diff --git a/libavcodec/dxva2.h b/libavcodec/dxva2.h
+index 22c93992f2..024999239d 100644
+--- a/libavcodec/dxva2.h
++++ b/libavcodec/dxva2.h
+@@ -47,6 +47,7 @@
+ 
+ #define FF_DXVA2_WORKAROUND_SCALING_LIST_ZIGZAG 1 ///< Work around for DXVA2 and old UVD/UVD+ ATI video cards
+ #define FF_DXVA2_WORKAROUND_INTEL_CLEARVIDEO    2 ///< Work around for DXVA2 and old Intel GPUs with ClearVideo interface
++#define FF_DXVA2_WORKAROUND_HEVC_REXT           4 ///< Signal the DXVA2 decoder is using the HEVC Rext picture structure
+ 
+ /**
+  * This structure is used to provides the necessary configurations and data
+diff --git a/libavcodec/dxva2_h264.c b/libavcodec/dxva2_h264.c
+index 5b23b28f12..abbde3902b 100644
+--- a/libavcodec/dxva2_h264.c
++++ b/libavcodec/dxva2_h264.c
+@@ -312,7 +312,7 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+     unsigned padding;
+     unsigned i;
+     unsigned type;
+-
++    
+     /* Create an annex B bitstream buffer with only slice NAL and finalize slice */
+ #if CONFIG_D3D11VA
+     if (ff_dxva2_is_d3d11(avctx)) {
+@@ -333,6 +333,58 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+             return -1;
+     }
+ #endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        FFDXVASharedContext *sctx = DXVA_SHARED_CONTEXT(avctx);
++        D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM *bistream = bs;
++        *bistream = (D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM) { .Offset = 0 };
++        HRESULT hr;
++
++        dxva_size = 0;
++        for (size_t i=0; i<ctx_pic->slice_count; i++)
++        {
++            dxva_size += 3; // startcode
++            slice = &ctx_pic->slice_short[i];
++            dxva_size += slice->SliceBytesInBuffer;
++        }
++        dxva_size = (dxva_size + (128 - 1)) & ~(128 - 1); // 128 bytes alignment
++
++        bistream->Size = dxva_size;
++
++        D3D12_HEAP_PROPERTIES constProp = {
++            .Type = D3D12_HEAP_TYPE_UPLOAD,
++            .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
++            .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
++            .CreationNodeMask = 1,
++            .VisibleNodeMask = 1,
++        };
++        D3D12_RESOURCE_DESC constantDesc = {
++            .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
++            .Width = bistream->Size,
++            .Height = 1,
++            .DepthOrArraySize = 1,
++            .MipLevels = 1,
++            .Format = DXGI_FORMAT_UNKNOWN,
++            .SampleDesc.Count = 1,
++            .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
++            .Flags = D3D12_RESOURCE_FLAG_NONE,
++        };
++        
++        hr = ID3D12Device1_CreateCommittedResource(sctx->d3d12_device, &constProp, D3D12_HEAP_FLAG_NONE,
++                                                   &constantDesc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL,
++                                                   &IID_ID3D12Resource, (void**)&bistream->pBuffer);
++        if (FAILED(hr))
++            return -1;
++
++        D3D12_RANGE readRange = {0}; // no reading of buffers we write in
++        hr = ID3D12Resource_Map(bistream->pBuffer, 0, &readRange, (void**)&dxva_data_ptr);
++        if (FAILED(hr))
++        {
++            ID3D12Resource_Release(bistream->pBuffer);
++            return -1;
++        }
++    }
++#endif
+ 
+     dxva_data = dxva_data_ptr;
+     current = dxva_data;
+@@ -394,6 +446,12 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+     if (avctx->pix_fmt == AV_PIX_FMT_DXVA2_VLD)
+         if (FAILED(IDirectXVideoDecoder_ReleaseBuffer(DXVA2_CONTEXT(ctx)->decoder, type)))
+             return -1;
++#endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM *bistream = bs;
++        ID3D12Resource_Unmap(bistream->pBuffer, 0, NULL);
++    }
+ #endif
+     if (i < ctx_pic->slice_count)
+         return -1;
+@@ -424,6 +482,12 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+         av_assert0((dsc2->DataSize & 127) == 0);
+     }
+ #endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        type = D3D12_VIDEO_DECODE_ARGUMENT_TYPE_SLICE_CONTROL;
++        av_assert0(((current - dxva_data) & 127) == 0);
++    }
++#endif
+ 
+     if (is_slice_short(avctx, ctx)) {
+         slice_data = ctx_pic->slice_short;
+@@ -432,6 +496,7 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+         slice_data = ctx_pic->slice_long;
+         slice_size = ctx_pic->slice_count * sizeof(*ctx_pic->slice_long);
+     }
++
+     return ff_dxva2_commit_buffer(avctx, ctx, sc,
+                                   type,
+                                   slice_data, slice_size, mb_count);
+@@ -442,6 +507,7 @@ static int dxva2_h264_start_frame(AVCodecContext *avctx,
+                                   av_unused const uint8_t *buffer,
+                                   av_unused uint32_t size)
+ {
++
+     const H264Context *h = avctx->priv_data;
+     AVDXVAContext *ctx = DXVA_CONTEXT(avctx);
+     struct dxva2_picture_context *ctx_pic = h->cur_pic_ptr->hwaccel_picture_private;
+@@ -563,3 +629,20 @@ const AVHWAccel ff_h264_d3d11va2_hwaccel = {
+     .priv_data_size = sizeof(FFDXVASharedContext),
+ };
+ #endif
++
++#if CONFIG_H264_D3D12_HWACCEL
++const AVHWAccel ff_h264_d3d12_hwaccel = {
++    .name           = "h264_d3d12",
++    .type           = AVMEDIA_TYPE_VIDEO,
++    .id             = AV_CODEC_ID_H264,
++    .pix_fmt        = AV_PIX_FMT_D3D12_VLD,
++    .init           = ff_dxva2_decode_init,
++    .uninit         = ff_dxva2_decode_uninit,
++    .start_frame    = dxva2_h264_start_frame,
++    .decode_slice   = dxva2_h264_decode_slice,
++    .end_frame      = dxva2_h264_end_frame,
++    .frame_params   = ff_dxva2_common_frame_params,
++    .frame_priv_data_size = sizeof(struct dxva2_picture_context),
++    .priv_data_size = sizeof(FFDXVASharedContext),
++};
++#endif
+diff --git a/libavcodec/dxva2_hevc.c b/libavcodec/dxva2_hevc.c
+index 7e6d5f3e2c..b93c9f7336 100644
+--- a/libavcodec/dxva2_hevc.c
++++ b/libavcodec/dxva2_hevc.c
+@@ -26,14 +26,47 @@
+ #include "hevc_data.h"
+ #include "hevcdec.h"
+ 
+-#if !HAVE_DXVA_PICPARAMS_HEVC
+-#include "compat/windows/dxva_hevc.h"
+-#endif
++#pragma pack(push, 1)
++typedef struct
++{
++    DXVA_PicParams_HEVC main;
++
++    // HEVC Range Extension
++    __C89_NAMELESS union {
++        __C89_NAMELESS struct {
++            UINT32 transform_skip_rotation_enabled_flag : 1;
++            UINT32 transform_skip_context_enabled_flag : 1;
++            UINT32 implicit_rdpcm_enabled_flag : 1;
++            UINT32 explicit_rdpcm_enabled_flag : 1;
++            UINT32 extended_precision_processing_flag : 1;
++            UINT32 intra_smoothing_disabled_flag : 1;
++            UINT32 high_precision_offsets_enabled_flag : 1;
++            UINT32 persistent_rice_adaptation_enabled_flag : 1;
++            UINT32 cabac_bypass_alignment_enabled_flag : 1;
++            UINT32 cross_component_prediction_enabled_flag : 1;
++            UINT32 chroma_qp_offset_list_enabled_flag : 1;
++            UINT32 BitDepthLuma16 : 1; // TODO merge in ReservedBits5 if not needed
++            UINT32 BitDepthChroma16 : 1; // TODO merge in ReservedBits5 if not needed
++            UINT32 ReservedBits8 : 19;
++        };
++        UINT32 dwRangeExtensionFlags;
++    };
++
++    UCHAR diff_cu_chroma_qp_offset_depth;
++    UCHAR chroma_qp_offset_list_len_minus1;
++    UCHAR log2_sao_offset_scale_luma;
++    UCHAR log2_sao_offset_scale_chroma;
++    UCHAR log2_max_transform_skip_block_size_minus2;
++    CHAR cb_qp_offset_list[6];
++    CHAR cr_qp_offset_list[6];
++
++} DXVA_PicParams_HEVC_Rext;
++#pragma pack(pop)
+ 
+ #define MAX_SLICES 256
+ 
+ struct hevc_dxva2_picture_context {
+-    DXVA_PicParams_HEVC   pp;
++    DXVA_PicParams_HEVC_Rext pp;
+     DXVA_Qmatrix_HEVC     qm;
+     unsigned              slice_count;
+     DXVA_Slice_HEVC_Short slice_short[MAX_SLICES];
+@@ -59,18 +92,48 @@ static int get_refpic_index(const DXVA_PicParams_HEVC *pp, int surface_index)
+ }
+ 
+ static void fill_picture_parameters(const AVCodecContext *avctx, AVDXVAContext *ctx, const HEVCContext *h,
+-                                    DXVA_PicParams_HEVC *pp)
++                                    DXVA_PicParams_HEVC_Rext *ppext)
+ {
+     const HEVCFrame *current_picture = h->ref;
+     const HEVCSPS *sps = h->ps.sps;
+     const HEVCPPS *pps = h->ps.pps;
+     int i, j;
++    DXVA_PicParams_HEVC *pp = &ppext->main;
+ 
+-    memset(pp, 0, sizeof(*pp));
++    memset(ppext, 0, sizeof(*ppext));
+ 
+     pp->PicWidthInMinCbsY  = sps->min_cb_width;
+     pp->PicHeightInMinCbsY = sps->min_cb_height;
+ 
++    if (sps->sps_range_extension_flag) {
++        ppext->dwRangeExtensionFlags |= (sps->transform_skip_rotation_enabled_flag     <<  0) |
++                                        (sps->transform_skip_context_enabled_flag      <<  1) |
++                                        (sps->implicit_rdpcm_enabled_flag              <<  2) |
++                                        (sps->explicit_rdpcm_enabled_flag              <<  3) |
++                                        (sps->extended_precision_processing_flag       <<  4) |
++                                        (sps->intra_smoothing_disabled_flag            <<  5) |
++                                        (sps->high_precision_offsets_enabled_flag      <<  5) |
++                                        (sps->persistent_rice_adaptation_enabled_flag  <<  7) |
++                                        (sps->cabac_bypass_alignment_enabled_flag      <<  8);
++    }
++    if (pps->pps_range_extensions_flag) {
++        ppext->dwRangeExtensionFlags |= (pps->cross_component_prediction_enabled_flag  <<  9) |
++                                        (pps->chroma_qp_offset_list_enabled_flag       << 10);
++        if (pps->chroma_qp_offset_list_enabled_flag) {
++            ppext->diff_cu_chroma_qp_offset_depth   = pps->diff_cu_chroma_qp_offset_depth;
++            ppext->chroma_qp_offset_list_len_minus1 = pps->chroma_qp_offset_list_len_minus1;
++            for (i = 0; i <= pps->chroma_qp_offset_list_len_minus1; i++) {
++                ppext->cb_qp_offset_list[i] = pps->cb_qp_offset_list[i];
++                ppext->cr_qp_offset_list[i] = pps->cr_qp_offset_list[i];
++            }
++        }
++        ppext->log2_sao_offset_scale_luma   = pps->log2_sao_offset_scale_luma;
++        ppext->log2_sao_offset_scale_chroma = pps->log2_sao_offset_scale_chroma;
++        if (pps->transform_skip_enabled_flag) {
++            ppext->log2_max_transform_skip_block_size_minus2 = pps->log2_max_transform_skip_block_size - 2;
++        }
++    }
++
+     pp->wFormatAndSequenceInfoFlags = (sps->chroma_format_idc             <<  0) |
+                                       (sps->separate_colour_plane_flag    <<  2) |
+                                       ((sps->bit_depth - 8)               <<  3) |
+@@ -166,7 +229,7 @@ static void fill_picture_parameters(const AVCodecContext *avctx, AVDXVAContext *
+     for (i = 0, j = 0; i < FF_ARRAY_ELEMS(pp->RefPicList); i++) {
+         const HEVCFrame *frame = NULL;
+         while (!frame && j < FF_ARRAY_ELEMS(h->DPB)) {
+-            if (&h->DPB[j] != current_picture && (h->DPB[j].flags & (HEVC_FRAME_FLAG_LONG_REF | HEVC_FRAME_FLAG_SHORT_REF)) && !h->DPB[j].missing)
++            if (&h->DPB[j] != current_picture && (h->DPB[j].flags & (HEVC_FRAME_FLAG_LONG_REF | HEVC_FRAME_FLAG_SHORT_REF)))
+                 frame = &h->DPB[j];
+             j++;
+         }
+@@ -276,6 +339,58 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+             return -1;
+     }
+ #endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        FFDXVASharedContext *sctx = DXVA_SHARED_CONTEXT(avctx);
++        D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM *bistream = bs;
++        *bistream = (D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM) { .Offset = 0 };
++        HRESULT hr;
++
++        dxva_size = 0;
++        for (size_t i=0; i<ctx_pic->slice_count; i++)
++        {
++            dxva_size += 3; // startcode
++            slice = &ctx_pic->slice_short[i];
++            dxva_size += slice->SliceBytesInBuffer;
++        }
++        dxva_size = (dxva_size + (128 - 1)) & ~(128 - 1); // 128 bytes alignment
++
++        bistream->Size = dxva_size;
++
++        D3D12_HEAP_PROPERTIES constProp = {
++            .Type = D3D12_HEAP_TYPE_UPLOAD,
++            .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
++            .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
++            .CreationNodeMask = 1,
++            .VisibleNodeMask = 1,
++        };
++        D3D12_RESOURCE_DESC constantDesc = {
++            .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
++            .Width = bistream->Size,
++            .Height = 1,
++            .DepthOrArraySize = 1,
++            .MipLevels = 1,
++            .Format = DXGI_FORMAT_UNKNOWN,
++            .SampleDesc.Count = 1,
++            .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
++            .Flags = D3D12_RESOURCE_FLAG_NONE,
++        };
++
++        hr = ID3D12Device1_CreateCommittedResource(sctx->d3d12_device, &constProp, D3D12_HEAP_FLAG_NONE,
++                                                   &constantDesc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL,
++                                                   &IID_ID3D12Resource, (void**)&bistream->pBuffer);
++        if (FAILED(hr))
++            return -1;
++
++        D3D12_RANGE readRange = {0}; // no reading of buffers we write in
++        hr = ID3D12Resource_Map(bistream->pBuffer, 0, &readRange, (void**)&dxva_data_ptr);
++        if (FAILED(hr))
++        {
++            ID3D12Resource_Release(bistream->pBuffer);
++            return -1;
++        }
++    }
++#endif
+ 
+     dxva_data = dxva_data_ptr;
+     current = dxva_data;
+@@ -320,6 +435,12 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+     if (avctx->pix_fmt == AV_PIX_FMT_DXVA2_VLD)
+         if (FAILED(IDirectXVideoDecoder_ReleaseBuffer(DXVA2_CONTEXT(ctx)->decoder, type)))
+             return -1;
++#endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM *bistream = bs;
++        ID3D12Resource_Unmap(bistream->pBuffer, 0, NULL);
++    }
+ #endif
+     if (i < ctx_pic->slice_count)
+         return -1;
+@@ -346,6 +467,11 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+         type = DXVA2_SliceControlBufferType;
+     }
+ #endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        type = D3D12_VIDEO_DECODE_ARGUMENT_TYPE_SLICE_CONTROL;
++    }
++#endif
+ 
+     slice_data = ctx_pic->slice_short;
+     slice_size = ctx_pic->slice_count * sizeof(*ctx_pic->slice_short);
+@@ -406,16 +532,18 @@ static int dxva2_hevc_decode_slice(AVCodecContext *avctx,
+ 
+ static int dxva2_hevc_end_frame(AVCodecContext *avctx)
+ {
++    AVDXVAContext *ctx = DXVA_CONTEXT(avctx);
+     HEVCContext *h = avctx->priv_data;
+     struct hevc_dxva2_picture_context *ctx_pic = h->ref->hwaccel_picture_private;
+-    int scale = ctx_pic->pp.dwCodingParamToolFlags & 1;
++    int scale = ctx_pic->pp.main.dwCodingParamToolFlags & 1;
++    int rext = (DXVA_CONTEXT_WORKAROUND(avctx, ctx) & FF_DXVA2_WORKAROUND_HEVC_REXT);
+     int ret;
+ 
+     if (ctx_pic->slice_count <= 0 || ctx_pic->bitstream_size <= 0)
+         return -1;
+ 
+     ret = ff_dxva2_common_end_frame(avctx, h->ref->frame,
+-                                    &ctx_pic->pp, sizeof(ctx_pic->pp),
++                                    &ctx_pic->pp, rext ? sizeof(ctx_pic->pp) : sizeof(ctx_pic->pp.main),
+                                     scale ? &ctx_pic->qm : NULL, scale ? sizeof(ctx_pic->qm) : 0,
+                                     commit_bitstream_and_slice_buffer);
+     return ret;
+@@ -471,3 +599,20 @@ const AVHWAccel ff_hevc_d3d11va2_hwaccel = {
+     .priv_data_size = sizeof(FFDXVASharedContext),
+ };
+ #endif
++
++#if CONFIG_HEVC_D3D12_HWACCEL
++const AVHWAccel ff_hevc_d3d12_hwaccel = {
++    .name           = "hevc_d3d12",
++    .type           = AVMEDIA_TYPE_VIDEO,
++    .id             = AV_CODEC_ID_HEVC,
++    .pix_fmt        = AV_PIX_FMT_D3D12_VLD,
++    .init           = ff_dxva2_decode_init,
++    .uninit         = ff_dxva2_decode_uninit,
++    .start_frame    = dxva2_hevc_start_frame,
++    .decode_slice   = dxva2_hevc_decode_slice,
++    .end_frame      = dxva2_hevc_end_frame,
++    .frame_params   = ff_dxva2_common_frame_params,
++    .frame_priv_data_size = sizeof(struct hevc_dxva2_picture_context),
++    .priv_data_size = sizeof(FFDXVASharedContext),
++};
++#endif
+diff --git a/libavcodec/dxva2_internal.h b/libavcodec/dxva2_internal.h
+index b822af59cd..c04b0e4618 100644
+--- a/libavcodec/dxva2_internal.h
++++ b/libavcodec/dxva2_internal.h
+@@ -38,6 +38,15 @@
+ #include "d3d11va.h"
+ #include "libavutil/hwcontext_d3d11va.h"
+ #endif
++#if CONFIG_D3D12
++#include "d3d12va.h"
++#ifdef __MINGW32__
++#define  D3D12_COMMAND_LIST_TYPE_VIDEO_DECODE 4
++
++#define D3D12_RESOURCE_STATE_VIDEO_DECODE_READ  0x10000
++#define D3D12_RESOURCE_STATE_VIDEO_DECODE_WRITE 0x20000
++#endif
++#endif
+ #if HAVE_DXVA_H
+ /* When targeting WINAPI_FAMILY_PHONE_APP or WINAPI_FAMILY_APP, dxva.h
+  * defines nothing. Force the struct definitions to be visible. */
+@@ -62,6 +71,9 @@ typedef union {
+ #if CONFIG_DXVA2
+     struct dxva_context      dxva2;
+ #endif
++#if CONFIG_D3D12
++    struct AVD3D12VAContext  d3d12;
++#endif
+ } AVDXVAContext;
+ 
+ typedef struct FFDXVASharedContext {
+@@ -89,6 +101,20 @@ typedef struct FFDXVASharedContext {
+     DXVA2_ConfigPictureDecode       dxva2_config;
+ #endif
+ 
++#if CONFIG_D3D12
++    ID3D12Device1                *d3d12_device;
++
++    ID3D12VideoDecodeCommandList *d3d12_cmd_list;
++    ID3D12CommandAllocator       *d3d12_cmd_allocator;
++    ID3D12CommandQueue           *d3d12_cmd_queue;
++
++    ID3D12VideoDecoderHeap       *d3d12_decoder_heap;
++
++    ID3D12Fence                  *d3dRenderFence;
++    UINT64                       fenceCounter;
++    HANDLE                       fenceReached;
++#endif
++
+     // Legacy (but used by code outside of setup)
+     // In generic mode, DXVA_CONTEXT() will return a pointer to this.
+     AVDXVAContext ctx;
+@@ -100,19 +126,21 @@ typedef struct FFDXVASharedContext {
+ 
+ #define D3D11VA_CONTEXT(ctx) (&ctx->d3d11va)
+ #define DXVA2_CONTEXT(ctx)   (&ctx->dxva2)
+-
+-#if CONFIG_D3D11VA && CONFIG_DXVA2
+-#define DXVA_CONTEXT_WORKAROUND(avctx, ctx)     (ff_dxva2_is_d3d11(avctx) ? ctx->d3d11va.workaround : ctx->dxva2.workaround)
+-#define DXVA_CONTEXT_COUNT(avctx, ctx)          (ff_dxva2_is_d3d11(avctx) ? ctx->d3d11va.surface_count : ctx->dxva2.surface_count)
+-#define DXVA_CONTEXT_DECODER(avctx, ctx)        (ff_dxva2_is_d3d11(avctx) ? (void *)ctx->d3d11va.decoder : (void *)ctx->dxva2.decoder)
+-#define DXVA_CONTEXT_REPORT_ID(avctx, ctx)      (*(ff_dxva2_is_d3d11(avctx) ? &ctx->d3d11va.report_id : &ctx->dxva2.report_id))
+-#define DXVA_CONTEXT_CFG(avctx, ctx)            (ff_dxva2_is_d3d11(avctx) ? (void *)ctx->d3d11va.cfg : (void *)ctx->dxva2.cfg)
+-#define DXVA_CONTEXT_CFG_BITSTREAM(avctx, ctx)  (ff_dxva2_is_d3d11(avctx) ? ctx->d3d11va.cfg->ConfigBitstreamRaw : ctx->dxva2.cfg->ConfigBitstreamRaw)
+-#define DXVA_CONTEXT_CFG_INTRARESID(avctx, ctx) (ff_dxva2_is_d3d11(avctx) ? ctx->d3d11va.cfg->ConfigIntraResidUnsigned : ctx->dxva2.cfg->ConfigIntraResidUnsigned)
+-#define DXVA_CONTEXT_CFG_RESIDACCEL(avctx, ctx) (ff_dxva2_is_d3d11(avctx) ? ctx->d3d11va.cfg->ConfigResidDiffAccelerator : ctx->dxva2.cfg->ConfigResidDiffAccelerator)
++#define D3D12_CONTEXT(ctx)   (&ctx->d3d12)
++
++#if CONFIG_D3D11VA && CONFIG_DXVA2 && CONFIG_D3D12
++#define DXVA_CONTEXT_WORKAROUND(avctx, ctx)     (ff_dxva2_is_d3d11(avctx) ? ctx->d3d11va.workaround : (ff_dxva2_is_d3d12(avctx) ? ctx->d3d12.workaround : ctx->dxva2.workaround))
++#define DXVA_CONTEXT_COUNT(avctx, ctx)          (ff_dxva2_is_d3d11(avctx) ? ctx->d3d11va.surface_count : (ff_dxva2_is_d3d12(avctx) ? ctx->d3d12.surfaces.NumTexture2Ds : ctx->dxva2.surface_count))
++#define DXVA_CONTEXT_DECODER(avctx, ctx)        (ff_dxva2_is_d3d11(avctx) ? (void *)ctx->d3d11va.decoder : (ff_dxva2_is_d3d12(avctx) ? (void *)ctx->d3d12.decoder : ctx->dxva2.decoder))
++#define DXVA_CONTEXT_REPORT_ID(avctx, ctx)      (*(ff_dxva2_is_d3d11(avctx) ? &ctx->d3d11va.report_id : (ff_dxva2_is_d3d12(avctx) ? &ctx->d3d12.report_id : &ctx->dxva2.report_id)))
++#define DXVA_CONTEXT_CFG(avctx, ctx)            (ff_dxva2_is_d3d11(avctx) ? (void *)ctx->d3d11va.cfg : ctx->dxva2.cfg)
++#define DXVA_CONTEXT_CFG_BITSTREAM(avctx, ctx)  (ff_dxva2_is_d3d11(avctx) ? ctx->d3d11va.cfg->ConfigBitstreamRaw : (ff_dxva2_is_d3d12(avctx) ? (2) : ctx->dxva2.cfg->ConfigBitstreamRaw))
++#define DXVA_CONTEXT_CFG_INTRARESID(avctx, ctx) (ff_dxva2_is_d3d11(avctx) ? ctx->d3d11va.cfg->ConfigIntraResidUnsigned : (ff_dxva2_is_d3d12(avctx) ? (0) : ctx->dxva2.cfg->ConfigIntraResidUnsigned))
++#define DXVA_CONTEXT_CFG_RESIDACCEL(avctx, ctx) (ff_dxva2_is_d3d11(avctx) ? ctx->d3d11va.cfg->ConfigResidDiffAccelerator : (ff_dxva2_is_d3d12(avctx) ? (0) : ctx->dxva2.cfg->ConfigResidDiffAccelerator))
+ #define DXVA_CONTEXT_VALID(avctx, ctx)          (DXVA_CONTEXT_DECODER(avctx, ctx) && \
+-                                                 DXVA_CONTEXT_CFG(avctx, ctx)     && \
+-                                                 (ff_dxva2_is_d3d11(avctx) || ctx->dxva2.surface_count))
++                                                 (DXVA_CONTEXT_CFG(avctx, ctx)     && \
++                                                  (ff_dxva2_is_d3d11(avctx) || ctx->dxva2.surface_count)) || \
++                                                 ff_dxva2_is_d3d12(avctx))
+ #elif CONFIG_DXVA2
+ #define DXVA_CONTEXT_WORKAROUND(avctx, ctx)     (ctx->dxva2.workaround)
+ #define DXVA_CONTEXT_COUNT(avctx, ctx)          (ctx->dxva2.surface_count)
+@@ -133,6 +161,15 @@ typedef struct FFDXVASharedContext {
+ #define DXVA_CONTEXT_CFG_INTRARESID(avctx, ctx) (ctx->d3d11va.cfg->ConfigIntraResidUnsigned)
+ #define DXVA_CONTEXT_CFG_RESIDACCEL(avctx, ctx) (ctx->d3d11va.cfg->ConfigResidDiffAccelerator)
+ #define DXVA_CONTEXT_VALID(avctx, ctx)          (ctx->d3d11va.decoder && ctx->d3d11va.cfg)
++#elif CONFIG_D3D12
++#define DXVA_CONTEXT_WORKAROUND(avctx, ctx)     (ctx->d3d12.workaround)
++#define DXVA_CONTEXT_COUNT(avctx, ctx)          (ctx->d3d12.surfaces.NumTexture2Ds)
++#define DXVA_CONTEXT_DECODER(avctx, ctx)        (ctx->d3d12.decoder)
++#define DXVA_CONTEXT_REPORT_ID(avctx, ctx)      (*(&ctx->d3d12.report_id))
++#define DXVA_CONTEXT_CFG_BITSTREAM(avctx, ctx)  (2)
++#define DXVA_CONTEXT_CFG_INTRARESID(avctx, ctx) (0)
++#define DXVA_CONTEXT_CFG_RESIDACCEL(avctx, ctx) (0)
++#define DXVA_CONTEXT_VALID(avctx, ctx)          (ctx->d3d12.decoder)
+ #endif
+ 
+ unsigned ff_dxva2_get_surface_index(const AVCodecContext *avctx,
+@@ -160,5 +197,6 @@ int ff_dxva2_common_frame_params(AVCodecContext *avctx,
+                                  AVBufferRef *hw_frames_ctx);
+ 
+ int ff_dxva2_is_d3d11(const AVCodecContext *avctx);
++int ff_dxva2_is_d3d12(const AVCodecContext *avctx);
+ 
+ #endif /* AVCODEC_DXVA2_INTERNAL_H */
+diff --git a/libavcodec/dxva2_mpeg2.c b/libavcodec/dxva2_mpeg2.c
+index c2560f9cf6..fc693d540c 100644
+--- a/libavcodec/dxva2_mpeg2.c
++++ b/libavcodec/dxva2_mpeg2.c
+@@ -35,7 +35,6 @@ struct dxva2_picture_context {
+ 
+     const uint8_t          *bitstream;
+     unsigned               bitstream_size;
+-    int                    frame_start;
+ };
+ 
+ static void fill_picture_parameters(AVCodecContext *avctx,
+@@ -48,12 +47,18 @@ static void fill_picture_parameters(AVCodecContext *avctx,
+ 
+     memset(pp, 0, sizeof(*pp));
+     pp->wDecodedPictureIndex         = ff_dxva2_get_surface_index(avctx, ctx, current_picture->f);
+-    pp->wDeblockedPictureIndex       = 0;
+-    if (s->pict_type != AV_PICTURE_TYPE_I)
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx))
++        // Post processing operations are not supported in D3D12 Video
++        pp->wDeblockedPictureIndex       = 0xffff;
++    else
++#endif
++        pp->wDeblockedPictureIndex       = 0;
++    if (s->pict_type != AV_PICTURE_TYPE_I && s->last_picture.f->buf[0])
+         pp->wForwardRefPictureIndex  = ff_dxva2_get_surface_index(avctx, ctx, s->last_picture.f);
+     else
+         pp->wForwardRefPictureIndex  = 0xffff;
+-    if (s->pict_type == AV_PICTURE_TYPE_B)
++    if (s->pict_type == AV_PICTURE_TYPE_B && s->next_picture.f->buf[0])
+         pp->wBackwardRefPictureIndex = ff_dxva2_get_surface_index(avctx, ctx, s->next_picture.f);
+     else
+         pp->wBackwardRefPictureIndex = 0xffff;
+@@ -158,9 +163,11 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+         s->current_picture_ptr->hwaccel_picture_private;
+     const int is_field = s->picture_structure != PICT_FRAME;
+     const unsigned mb_count = s->mb_width * (s->mb_height >> is_field);
++    DXVA_SliceInfo *slice = NULL;
+     void     *dxva_data_ptr;
+     uint8_t  *dxva_data, *current, *end;
+     unsigned dxva_size;
++    unsigned padding;
+     unsigned i;
+     unsigned type;
+ 
+@@ -183,13 +190,64 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+             return -1;
+     }
+ #endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        FFDXVASharedContext *sctx = DXVA_SHARED_CONTEXT(avctx);
++        D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM *bistream = bs;
++        *bistream = (D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM) { .Offset = 0 };
++        HRESULT hr;
++
++        dxva_size = 0;
++        for (size_t i=0; i<ctx_pic->slice_count; i++)
++        {
++            slice = &ctx_pic->slice[i];
++            dxva_size += slice->dwSliceBitsInBuffer / 8;
++        }
++        dxva_size = (dxva_size + (128 - 1)) & ~(128 - 1); // 128 bytes alignment
++
++        bistream->Size = dxva_size;
++
++        D3D12_HEAP_PROPERTIES constProp = {
++            .Type = D3D12_HEAP_TYPE_UPLOAD,
++            .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
++            .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
++            .CreationNodeMask = 1,
++            .VisibleNodeMask = 1,
++        };
++        D3D12_RESOURCE_DESC constantDesc = {
++            .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
++            .Width = bistream->Size,
++            .Height = 1,
++            .DepthOrArraySize = 1,
++            .MipLevels = 1,
++            .Format = DXGI_FORMAT_UNKNOWN,
++            .SampleDesc.Count = 1,
++            .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
++            .Flags = D3D12_RESOURCE_FLAG_NONE,
++        };
++
++        hr = ID3D12Device1_CreateCommittedResource(sctx->d3d12_device, &constProp, D3D12_HEAP_FLAG_NONE,
++                                                   &constantDesc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL,
++                                                   &IID_ID3D12Resource, (void**)&bistream->pBuffer);
++        if (FAILED(hr))
++            return -1;
++
++        D3D12_RANGE readRange = {0}; // no reading of buffers we write in
++        hr = ID3D12Resource_Map(bistream->pBuffer, 0, &readRange, (void**)&dxva_data_ptr);
++        if (FAILED(hr))
++        {
++            ID3D12Resource_Release(bistream->pBuffer);
++            return -1;
++        }
++    }
++#endif
+ 
+     dxva_data = dxva_data_ptr;
+     current = dxva_data;
+     end = dxva_data + dxva_size;
+ 
+     for (i = 0; i < ctx_pic->slice_count; i++) {
+-        DXVA_SliceInfo *slice = &ctx_pic->slice[i];
++        slice = &ctx_pic->slice[i];
+         unsigned position = slice->dwSliceDataLocation;
+         unsigned size     = slice->dwSliceBitsInBuffer / 8;
+         if (size > end - current) {
+@@ -208,6 +266,13 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+         memcpy(current, &ctx_pic->bitstream[position], size);
+         current += size;
+     }
++    padding = FFMIN(128 - ((current - dxva_data) & 127), end - current);
++    if (slice && padding > 0) {
++        memset(current, 0, padding);
++        current += padding;
++
++        slice->dwSliceBitsInBuffer += 8 * padding;
++    }
+ #if CONFIG_D3D11VA
+     if (ff_dxva2_is_d3d11(avctx))
+         if (FAILED(ID3D11VideoContext_ReleaseDecoderBuffer(D3D11VA_CONTEXT(ctx)->video_context, D3D11VA_CONTEXT(ctx)->decoder, type)))
+@@ -217,6 +282,12 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+     if (avctx->pix_fmt == AV_PIX_FMT_DXVA2_VLD)
+         if (FAILED(IDirectXVideoDecoder_ReleaseBuffer(DXVA2_CONTEXT(ctx)->decoder, type)))
+             return -1;
++#endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM *bistream = bs;
++        ID3D12Resource_Unmap(bistream->pBuffer, 0, NULL);
++    }
+ #endif
+     if (i < ctx_pic->slice_count)
+         return -1;
+@@ -243,6 +314,11 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+         type = DXVA2_SliceControlBufferType;
+     }
+ #endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        type = D3D12_VIDEO_DECODE_ARGUMENT_TYPE_SLICE_CONTROL;
++    }
++#endif
+ 
+     return ff_dxva2_commit_buffer(avctx, ctx, sc,
+                                   type,
+@@ -270,7 +346,6 @@ static int dxva2_mpeg2_start_frame(AVCodecContext *avctx,
+     ctx_pic->slice_count    = 0;
+     ctx_pic->bitstream_size = 0;
+     ctx_pic->bitstream      = NULL;
+-    ctx_pic->frame_start    = 1;
+     return 0;
+ }
+ 
+@@ -304,9 +379,8 @@ static int dxva2_mpeg2_end_frame(AVCodecContext *avctx)
+         s->current_picture_ptr->hwaccel_picture_private;
+     int ret;
+ 
+-    if (ctx_pic->slice_count <= 0 || ctx_pic->bitstream_size <= 0 || !ctx_pic->frame_start)
++    if (ctx_pic->slice_count <= 0 || ctx_pic->bitstream_size <= 0)
+         return -1;
+-    ctx_pic->frame_start = 0;
+     ret = ff_dxva2_common_end_frame(avctx, s->current_picture_ptr->f,
+                                     &ctx_pic->pp, sizeof(ctx_pic->pp),
+                                     &ctx_pic->qm, sizeof(ctx_pic->qm),
+@@ -366,3 +440,20 @@ const AVHWAccel ff_mpeg2_d3d11va2_hwaccel = {
+     .priv_data_size = sizeof(FFDXVASharedContext),
+ };
+ #endif
++
++#if CONFIG_MPEG2_D3D12_HWACCEL
++const AVHWAccel ff_mpeg2_d3d12_hwaccel = {
++    .name           = "mpeg2_d3d12",
++    .type           = AVMEDIA_TYPE_VIDEO,
++    .id             = AV_CODEC_ID_MPEG2VIDEO,
++    .pix_fmt        = AV_PIX_FMT_D3D12_VLD,
++    .init           = ff_dxva2_decode_init,
++    .uninit         = ff_dxva2_decode_uninit,
++    .start_frame    = dxva2_mpeg2_start_frame,
++    .decode_slice   = dxva2_mpeg2_decode_slice,
++    .end_frame      = dxva2_mpeg2_end_frame,
++    .frame_params   = ff_dxva2_common_frame_params,
++    .frame_priv_data_size = sizeof(struct dxva2_picture_context),
++    .priv_data_size = sizeof(FFDXVASharedContext),
++};
++#endif
+diff --git a/libavcodec/dxva2_vc1.c b/libavcodec/dxva2_vc1.c
+index f08ac8b5a0..2cdd2708a0 100644
+--- a/libavcodec/dxva2_vc1.c
++++ b/libavcodec/dxva2_vc1.c
+@@ -53,13 +53,19 @@ static void fill_picture_parameters(AVCodecContext *avctx,
+     }
+ 
+     memset(pp, 0, sizeof(*pp));
+-    pp->wDecodedPictureIndex    =
+-    pp->wDeblockedPictureIndex  = ff_dxva2_get_surface_index(avctx, ctx, current_picture->f);
+-    if (s->pict_type != AV_PICTURE_TYPE_I && !v->bi_type)
++    pp->wDecodedPictureIndex    = ff_dxva2_get_surface_index(avctx, ctx, current_picture->f);
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx))
++        // Post processing operations are not supported in D3D12 Video
++        pp->wDeblockedPictureIndex       = 0xffff;
++    else
++#endif
++        pp->wDeblockedPictureIndex  = pp->wDecodedPictureIndex;
++    if (s->pict_type != AV_PICTURE_TYPE_I && !v->bi_type && s->last_picture.f->buf[0])
+         pp->wForwardRefPictureIndex = ff_dxva2_get_surface_index(avctx, ctx, s->last_picture.f);
+     else
+         pp->wForwardRefPictureIndex = 0xffff;
+-    if (s->pict_type == AV_PICTURE_TYPE_B && !v->bi_type)
++    if (s->pict_type == AV_PICTURE_TYPE_B && !v->bi_type && s->next_picture.f->buf[0])
+         pp->wBackwardRefPictureIndex = ff_dxva2_get_surface_index(avctx, ctx, s->next_picture.f);
+     else
+         pp->wBackwardRefPictureIndex = 0xffff;
+@@ -115,8 +121,11 @@ static void fill_picture_parameters(AVCodecContext *avctx,
+                                   (s->max_b_frames       );
+     pp->bPicExtrapolation       = (!v->interlace || v->fcm == PROGRESSIVE) ? 1 : 2;
+     pp->bPicDeblocked           = ((!pp->bPicBackwardPrediction && v->overlap)        << 6) |
+-                                  ((v->profile != PROFILE_ADVANCED && v->rangeredfrm) << 5) |
+                                   (s->loop_filter                                     << 1);
++#if CONFIG_D3D12
++    if (!ff_dxva2_is_d3d12(avctx))
++#endif
++        pp->bPicDeblocked       |= ((v->profile != PROFILE_ADVANCED && v->rangeredfrm) << 5);
+     pp->bPicDeblockConfined     = (v->postprocflag             << 7) |
+                                   (v->broadcast                << 6) |
+                                   (v->interlace                << 5) |
+@@ -218,7 +227,57 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+             return -1;
+     }
+ #endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        FFDXVASharedContext *sctx = DXVA_SHARED_CONTEXT(avctx);
++        D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM *bistream = bs;
++        *bistream = (D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM) { .Offset = 0 };
++        HRESULT hr;
++
++        dxva_size = 0;
++        for (size_t i=0; i<ctx_pic->slice_count; i++)
++        {
++            DXVA_SliceInfo *slice = &ctx_pic->slice[i];
++            dxva_size += start_code_size + slice->dwSliceBitsInBuffer / 8;
++        }
++        dxva_size = (dxva_size + (128 - 1)) & ~(128 - 1); // 128 bytes alignment
++
++        bistream->Size = dxva_size;
++
++        D3D12_HEAP_PROPERTIES constProp = {
++            .Type = D3D12_HEAP_TYPE_UPLOAD,
++            .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
++            .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
++            .CreationNodeMask = 1,
++            .VisibleNodeMask = 1,
++        };
++        D3D12_RESOURCE_DESC constantDesc = {
++            .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
++            .Width = bistream->Size,
++            .Height = 1,
++            .DepthOrArraySize = 1,
++            .MipLevels = 1,
++            .Format = DXGI_FORMAT_UNKNOWN,
++            .SampleDesc.Count = 1,
++            .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
++            .Flags = D3D12_RESOURCE_FLAG_NONE,
++        };
++
++        hr = ID3D12Device1_CreateCommittedResource(sctx->d3d12_device, &constProp, D3D12_HEAP_FLAG_NONE,
++                                                   &constantDesc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL,
++                                                   &IID_ID3D12Resource, (void**)&bistream->pBuffer);
++        if (FAILED(hr))
++            return -1;
+ 
++        D3D12_RANGE readRange = {0}; // no reading of buffers we write in
++        hr = ID3D12Resource_Map(bistream->pBuffer, 0, &readRange, (void**)&dxva_data_ptr);
++        if (FAILED(hr))
++        {
++            ID3D12Resource_Release(bistream->pBuffer);
++            return -1;
++        }
++    }
++#endif
+     dxva_data = dxva_data_ptr;
+     current = dxva_data;
+     end = dxva_data + dxva_size;
+@@ -272,6 +331,12 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+     if (avctx->pix_fmt == AV_PIX_FMT_DXVA2_VLD)
+         if (FAILED(IDirectXVideoDecoder_ReleaseBuffer(DXVA2_CONTEXT(ctx)->decoder, type)))
+             return -1;
++#endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM *bistream = bs;
++        ID3D12Resource_Unmap(bistream->pBuffer, 0, NULL);
++    }
+ #endif
+     if (i < ctx_pic->slice_count)
+         return -1;
+@@ -298,6 +363,11 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+         type = DXVA2_SliceControlBufferType;
+     }
+ #endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        type = D3D12_VIDEO_DECODE_ARGUMENT_TYPE_SLICE_CONTROL;
++    }
++#endif
+ 
+     return ff_dxva2_commit_buffer(avctx, ctx, sc,
+                                   type,
+@@ -442,6 +512,23 @@ const AVHWAccel ff_wmv3_d3d11va2_hwaccel = {
+ };
+ #endif
+ 
++#if CONFIG_WMV3_D3D12_HWACCEL
++const AVHWAccel ff_wmv3_d3d12_hwaccel = {
++    .name           = "wmv3_d3d12",
++    .type           = AVMEDIA_TYPE_VIDEO,
++    .id             = AV_CODEC_ID_WMV3,
++    .pix_fmt        = AV_PIX_FMT_D3D12_VLD,
++    .init           = ff_dxva2_decode_init,
++    .uninit         = ff_dxva2_decode_uninit,
++    .start_frame    = dxva2_vc1_start_frame,
++    .decode_slice   = dxva2_vc1_decode_slice,
++    .end_frame      = dxva2_vc1_end_frame,
++    .frame_params   = ff_dxva2_common_frame_params,
++    .frame_priv_data_size = sizeof(struct dxva2_picture_context),
++    .priv_data_size = sizeof(FFDXVASharedContext),
++};
++#endif
++
+ #if CONFIG_VC1_D3D11VA_HWACCEL
+ const AVHWAccel ff_vc1_d3d11va_hwaccel = {
+     .name           = "vc1_d3d11va",
+@@ -475,3 +562,20 @@ const AVHWAccel ff_vc1_d3d11va2_hwaccel = {
+     .priv_data_size = sizeof(FFDXVASharedContext),
+ };
+ #endif
++
++#if CONFIG_VC1_D3D12_HWACCEL
++const AVHWAccel ff_vc1_d3d12_hwaccel = {
++    .name           = "vc1_d3d12",
++    .type           = AVMEDIA_TYPE_VIDEO,
++    .id             = AV_CODEC_ID_VC1,
++    .pix_fmt        = AV_PIX_FMT_D3D12_VLD,
++    .init           = ff_dxva2_decode_init,
++    .uninit         = ff_dxva2_decode_uninit,
++    .start_frame    = dxva2_vc1_start_frame,
++    .decode_slice   = dxva2_vc1_decode_slice,
++    .end_frame      = dxva2_vc1_end_frame,
++    .frame_params   = ff_dxva2_common_frame_params,
++    .frame_priv_data_size = sizeof(struct dxva2_picture_context),
++    .priv_data_size = sizeof(FFDXVASharedContext),
++};
++#endif
+diff --git a/libavcodec/dxva2_vp9.c b/libavcodec/dxva2_vp9.c
+index 362d885f44..400e5a2b39 100644
+--- a/libavcodec/dxva2_vp9.c
++++ b/libavcodec/dxva2_vp9.c
+@@ -198,6 +198,53 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+     }
+ #endif
+ 
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        FFDXVASharedContext *sctx = DXVA_SHARED_CONTEXT(avctx);
++        D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM *bistream = bs;
++        *bistream = (D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM) { .Offset = 0 };
++        HRESULT hr;
++
++        dxva_size = ctx_pic->slice.SliceBytesInBuffer;
++        dxva_size = (dxva_size + (128 - 1)) & ~(128 - 1); // 128 bytes alignment
++
++        bistream->Size = dxva_size;
++
++        D3D12_HEAP_PROPERTIES constProp = {
++            .Type = D3D12_HEAP_TYPE_UPLOAD,
++            .CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
++            .MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN,
++            .CreationNodeMask = 1,
++            .VisibleNodeMask = 1,
++        };
++        D3D12_RESOURCE_DESC constantDesc = {
++            .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
++            .Width = bistream->Size,
++            .Height = 1,
++            .DepthOrArraySize = 1,
++            .MipLevels = 1,
++            .Format = DXGI_FORMAT_UNKNOWN,
++            .SampleDesc.Count = 1,
++            .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
++            .Flags = D3D12_RESOURCE_FLAG_NONE,
++        };
++
++        hr = ID3D12Device1_CreateCommittedResource(sctx->d3d12_device, &constProp, D3D12_HEAP_FLAG_NONE,
++                                                   &constantDesc, D3D12_RESOURCE_STATE_GENERIC_READ, NULL,
++                                                   &IID_ID3D12Resource, (void**)&bistream->pBuffer);
++        if (FAILED(hr))
++            return -1;
++
++        D3D12_RANGE readRange = {0}; // no reading of buffers we write in
++        hr = ID3D12Resource_Map(bistream->pBuffer, 0, &readRange, (void**)&dxva_data_ptr);
++        if (FAILED(hr))
++        {
++            ID3D12Resource_Release(bistream->pBuffer);
++            return -1;
++        }
++    }
++#endif
++
+     dxva_data = dxva_data_ptr;
+ 
+     if (ctx_pic->slice.SliceBytesInBuffer > dxva_size) {
+@@ -223,6 +270,12 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+         if (FAILED(IDirectXVideoDecoder_ReleaseBuffer(DXVA2_CONTEXT(ctx)->decoder, type)))
+             return -1;
+ #endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        D3D12_VIDEO_DECODE_COMPRESSED_BITSTREAM *bistream = bs;
++        ID3D12Resource_Unmap(bistream->pBuffer, 0, NULL);
++    }
++#endif
+ 
+ #if CONFIG_D3D11VA
+     if (ff_dxva2_is_d3d11(avctx)) {
+@@ -246,6 +299,11 @@ static int commit_bitstream_and_slice_buffer(AVCodecContext *avctx,
+         type = DXVA2_SliceControlBufferType;
+     }
+ #endif
++#if CONFIG_D3D12
++    if (ff_dxva2_is_d3d12(avctx)) {
++        type = D3D12_VIDEO_DECODE_ARGUMENT_TYPE_SLICE_CONTROL;
++    }
++#endif
+ 
+     return ff_dxva2_commit_buffer(avctx, ctx, sc,
+                                   type,
+@@ -358,3 +416,20 @@ const AVHWAccel ff_vp9_d3d11va2_hwaccel = {
+     .priv_data_size = sizeof(FFDXVASharedContext),
+ };
+ #endif
++
++#if CONFIG_VP9_D3D12_HWACCEL
++const AVHWAccel ff_vp9_d3d12_hwaccel = {
++    .name           = "vp9_d3d12",
++    .type           = AVMEDIA_TYPE_VIDEO,
++    .id             = AV_CODEC_ID_VP9,
++    .pix_fmt        = AV_PIX_FMT_D3D12_VLD,
++    .init           = ff_dxva2_decode_init,
++    .uninit         = ff_dxva2_decode_uninit,
++    .start_frame    = dxva2_vp9_start_frame,
++    .decode_slice   = dxva2_vp9_decode_slice,
++    .end_frame      = dxva2_vp9_end_frame,
++    .frame_params   = ff_dxva2_common_frame_params,
++    .frame_priv_data_size = sizeof(struct vp9_dxva2_picture_context),
++    .priv_data_size = sizeof(FFDXVASharedContext),
++};
++#endif
+\ No newline at end of file
+diff --git a/libavcodec/h2645_parse.c b/libavcodec/h2645_parse.c
+index 03780680c6..f1604b3f1e 100644
+--- a/libavcodec/h2645_parse.c
++++ b/libavcodec/h2645_parse.c
+@@ -319,9 +319,9 @@ static int h264_parse_nal_header(H2645NAL *nal, void *logctx)
+     nal->ref_idc = get_bits(gb, 2);
+     nal->type    = get_bits(gb, 5);
+ 
+-    av_log(logctx, AV_LOG_DEBUG,
++    /*av_log(logctx, AV_LOG_DEBUG,
+            "nal_unit_type: %d(%s), nal_ref_idc: %d\n",
+-           nal->type, h264_nal_unit_name(nal->type), nal->ref_idc);
++           nal->type, h264_nal_unit_name(nal->type), nal->ref_idc);*/
+ 
+     return 0;
+ }
+diff --git a/libavcodec/h264_slice.c b/libavcodec/h264_slice.c
+index e0924e637d..8819b8742b 100644
+--- a/libavcodec/h264_slice.c
++++ b/libavcodec/h264_slice.c
+@@ -791,6 +791,7 @@ static enum AVPixelFormat get_pixel_format(H264Context *h, int force_callback)
+ {
+ #define HWACCEL_MAX (CONFIG_H264_DXVA2_HWACCEL + \
+                      (CONFIG_H264_D3D11VA_HWACCEL * 2) + \
++                     CONFIG_H264_D3D12_HWACCEL + \
+                      CONFIG_H264_NVDEC_HWACCEL + \
+                      CONFIG_H264_VAAPI_HWACCEL + \
+                      CONFIG_H264_VIDEOTOOLBOX_HWACCEL + \
+@@ -874,6 +875,9 @@ static enum AVPixelFormat get_pixel_format(H264Context *h, int force_callback)
+             *fmt++ = AV_PIX_FMT_D3D11VA_VLD;
+             *fmt++ = AV_PIX_FMT_D3D11;
+ #endif
++#if CONFIG_H264_D3D12_HWACCEL
++            *fmt++ = AV_PIX_FMT_D3D12_VLD;
++#endif
+ #if CONFIG_H264_VAAPI_HWACCEL
+             *fmt++ = AV_PIX_FMT_VAAPI;
+ #endif
+@@ -1085,8 +1089,10 @@ static int h264_init_ps(H264Context *h, const H264SliceContext *sl, int first_sl
+         || (non_j_pixfmt(h->avctx->pix_fmt) != non_j_pixfmt(get_pixel_format(h, 0))))
+         must_reinit = 1;
+ 
+-    if (first_slice && av_cmp_q(sps->sar, h->avctx->sample_aspect_ratio))
+-        must_reinit = 1;
++    if (first_slice && av_cmp_q(sps->sar, h->avctx->sample_aspect_ratio)) {
++         must_reinit = 1;
++        ff_set_sar(h->avctx, sps->sar);
++    }
+ 
+     if (!h->setup_finished) {
+         h->avctx->profile = ff_h264_get_profile(sps);
+diff --git a/libavcodec/h264dec.c b/libavcodec/h264dec.c
+index 9948a6a9eb..57704487ac 100644
+--- a/libavcodec/h264dec.c
++++ b/libavcodec/h264dec.c
+@@ -1117,6 +1117,9 @@ const AVCodec ff_h264_decoder = {
+ #if CONFIG_H264_D3D11VA2_HWACCEL
+                                HWACCEL_D3D11VA2(h264),
+ #endif
++#if CONFIG_H264_D3D12_HWACCEL
++                               HWACCEL_D3D12(h264),
++#endif
+ #if CONFIG_H264_NVDEC_HWACCEL
+                                HWACCEL_NVDEC(h264),
+ #endif
+diff --git a/libavcodec/hevcdec.c b/libavcodec/hevcdec.c
+index 8ccb5cc340..6dbd5ba386 100644
+--- a/libavcodec/hevcdec.c
++++ b/libavcodec/hevcdec.c
+@@ -412,6 +412,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
+         *fmt++ = AV_PIX_FMT_D3D11VA_VLD;
+         *fmt++ = AV_PIX_FMT_D3D11;
+ #endif
++#if CONFIG_HEVC_D3D12_HWACCEL
++        *fmt++ = AV_PIX_FMT_D3D12_VLD;
++#endif
+ #if CONFIG_HEVC_VAAPI_HWACCEL
+         *fmt++ = AV_PIX_FMT_VAAPI;
+ #endif
+@@ -433,6 +436,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
+         *fmt++ = AV_PIX_FMT_D3D11VA_VLD;
+         *fmt++ = AV_PIX_FMT_D3D11;
+ #endif
++#if CONFIG_HEVC_D3D12_HWACCEL
++        *fmt++ = AV_PIX_FMT_D3D12_VLD;
++#endif
+ #if CONFIG_HEVC_VAAPI_HWACCEL
+         *fmt++ = AV_PIX_FMT_VAAPI;
+ #endif
+@@ -447,6 +453,16 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
+ #endif
+         break;
+     case AV_PIX_FMT_YUV444P:
++#if CONFIG_HEVC_DXVA2_HWACCEL
++        *fmt++ = AV_PIX_FMT_DXVA2_VLD;
++#endif
++#if CONFIG_HEVC_D3D11VA_HWACCEL
++        *fmt++ = AV_PIX_FMT_D3D11VA_VLD;
++        *fmt++ = AV_PIX_FMT_D3D11;
++#endif
++#if CONFIG_HEVC_D3D12_HWACCEL
++        *fmt++ = AV_PIX_FMT_D3D12_VLD;
++#endif
+ #if CONFIG_HEVC_VDPAU_HWACCEL
+         *fmt++ = AV_PIX_FMT_VDPAU;
+ #endif
+@@ -455,10 +471,31 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
+ #endif
+ #if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
+         *fmt++ = AV_PIX_FMT_VIDEOTOOLBOX;
++#endif
++    case AV_PIX_FMT_YUV422P12:
++#if CONFIG_HEVC_DXVA2_HWACCEL
++        *fmt++ = AV_PIX_FMT_DXVA2_VLD;
++#endif
++#if CONFIG_HEVC_D3D11VA_HWACCEL
++        *fmt++ = AV_PIX_FMT_D3D11VA_VLD;
++        *fmt++ = AV_PIX_FMT_D3D11;
++#endif
++#if CONFIG_HEVC_D3D12_HWACCEL
++        *fmt++ = AV_PIX_FMT_D3D12_VLD;
+ #endif
+         break;
+     case AV_PIX_FMT_YUV422P:
+     case AV_PIX_FMT_YUV422P10LE:
++#if CONFIG_HEVC_DXVA2_HWACCEL
++        *fmt++ = AV_PIX_FMT_DXVA2_VLD;
++#endif
++#if CONFIG_HEVC_D3D11VA_HWACCEL
++        *fmt++ = AV_PIX_FMT_D3D11VA_VLD;
++        *fmt++ = AV_PIX_FMT_D3D11;
++#endif
++#if CONFIG_HEVC_D3D12_HWACCEL
++        *fmt++ = AV_PIX_FMT_D3D12_VLD;
++#endif
+ #if CONFIG_HEVC_VAAPI_HWACCEL
+        *fmt++ = AV_PIX_FMT_VAAPI;
+ #endif
+@@ -3907,6 +3944,9 @@ const AVCodec ff_hevc_decoder = {
+ #if CONFIG_HEVC_D3D11VA2_HWACCEL
+                                HWACCEL_D3D11VA2(hevc),
+ #endif
++#if CONFIG_HEVC_D3D12_HWACCEL
++                               HWACCEL_D3D12(hevc),
++#endif
+ #if CONFIG_HEVC_NVDEC_HWACCEL
+                                HWACCEL_NVDEC(hevc),
+ #endif
+diff --git a/libavcodec/hwaccels.h b/libavcodec/hwaccels.h
+index 1e7b464950..480b6268fd 100644
+--- a/libavcodec/hwaccels.h
++++ b/libavcodec/hwaccels.h
+@@ -30,6 +30,7 @@ extern const AVHWAccel ff_h263_vaapi_hwaccel;
+ extern const AVHWAccel ff_h263_videotoolbox_hwaccel;
+ extern const AVHWAccel ff_h264_d3d11va_hwaccel;
+ extern const AVHWAccel ff_h264_d3d11va2_hwaccel;
++extern const AVHWAccel ff_h264_d3d12_hwaccel;
+ extern const AVHWAccel ff_h264_dxva2_hwaccel;
+ extern const AVHWAccel ff_h264_nvdec_hwaccel;
+ extern const AVHWAccel ff_h264_vaapi_hwaccel;
+@@ -37,6 +38,7 @@ extern const AVHWAccel ff_h264_vdpau_hwaccel;
+ extern const AVHWAccel ff_h264_videotoolbox_hwaccel;
+ extern const AVHWAccel ff_hevc_d3d11va_hwaccel;
+ extern const AVHWAccel ff_hevc_d3d11va2_hwaccel;
++extern const AVHWAccel ff_hevc_d3d12_hwaccel;
+ extern const AVHWAccel ff_hevc_dxva2_hwaccel;
+ extern const AVHWAccel ff_hevc_nvdec_hwaccel;
+ extern const AVHWAccel ff_hevc_vaapi_hwaccel;
+@@ -50,6 +52,7 @@ extern const AVHWAccel ff_mpeg1_videotoolbox_hwaccel;
+ extern const AVHWAccel ff_mpeg1_xvmc_hwaccel;
+ extern const AVHWAccel ff_mpeg2_d3d11va_hwaccel;
+ extern const AVHWAccel ff_mpeg2_d3d11va2_hwaccel;
++extern const AVHWAccel ff_mpeg2_d3d12_hwaccel;
+ extern const AVHWAccel ff_mpeg2_nvdec_hwaccel;
+ extern const AVHWAccel ff_mpeg2_dxva2_hwaccel;
+ extern const AVHWAccel ff_mpeg2_vaapi_hwaccel;
+@@ -63,6 +66,7 @@ extern const AVHWAccel ff_mpeg4_videotoolbox_hwaccel;
+ extern const AVHWAccel ff_prores_videotoolbox_hwaccel;
+ extern const AVHWAccel ff_vc1_d3d11va_hwaccel;
+ extern const AVHWAccel ff_vc1_d3d11va2_hwaccel;
++extern const AVHWAccel ff_vc1_d3d12_hwaccel;
+ extern const AVHWAccel ff_vc1_dxva2_hwaccel;
+ extern const AVHWAccel ff_vc1_nvdec_hwaccel;
+ extern const AVHWAccel ff_vc1_vaapi_hwaccel;
+@@ -71,6 +75,7 @@ extern const AVHWAccel ff_vp8_nvdec_hwaccel;
+ extern const AVHWAccel ff_vp8_vaapi_hwaccel;
+ extern const AVHWAccel ff_vp9_d3d11va_hwaccel;
+ extern const AVHWAccel ff_vp9_d3d11va2_hwaccel;
++extern const AVHWAccel ff_vp9_d3d12_hwaccel;
+ extern const AVHWAccel ff_vp9_dxva2_hwaccel;
+ extern const AVHWAccel ff_vp9_nvdec_hwaccel;
+ extern const AVHWAccel ff_vp9_vaapi_hwaccel;
+diff --git a/libavcodec/hwconfig.h b/libavcodec/hwconfig.h
+index 34a70fea34..0641ce7950 100644
+--- a/libavcodec/hwconfig.h
++++ b/libavcodec/hwconfig.h
+@@ -68,6 +68,8 @@ typedef struct AVCodecHWConfigInternal {
+     HW_CONFIG_HWACCEL(1, 1, 1, DXVA2_VLD,    DXVA2,        ff_ ## codec ## _dxva2_hwaccel)
+ #define HWACCEL_D3D11VA2(codec) \
+     HW_CONFIG_HWACCEL(1, 1, 1, D3D11,        D3D11VA,      ff_ ## codec ## _d3d11va2_hwaccel)
++#define HWACCEL_D3D12(codec) \
++    HW_CONFIG_HWACCEL(0, 0, 1, D3D12_VLD,    NONE,         ff_ ## codec ## _d3d12_hwaccel)
+ #define HWACCEL_NVDEC(codec) \
+     HW_CONFIG_HWACCEL(1, 1, 0, CUDA,         CUDA,         ff_ ## codec ## _nvdec_hwaccel)
+ #define HWACCEL_VAAPI(codec) \
+diff --git a/libavcodec/mpeg12dec.c b/libavcodec/mpeg12dec.c
+index 20672f089a..d75726b161 100644
+--- a/libavcodec/mpeg12dec.c
++++ b/libavcodec/mpeg12dec.c
+@@ -1139,6 +1139,9 @@ static const enum AVPixelFormat mpeg2_hwaccel_pixfmt_list_420[] = {
+     AV_PIX_FMT_D3D11VA_VLD,
+     AV_PIX_FMT_D3D11,
+ #endif
++#if CONFIG_MPEG2_D3D12_HWACCEL
++    AV_PIX_FMT_D3D12_VLD,
++#endif
+ #if CONFIG_MPEG2_VAAPI_HWACCEL
+     AV_PIX_FMT_VAAPI,
+ #endif
+@@ -2966,6 +2969,9 @@ const AVCodec ff_mpeg2video_decoder = {
+ #if CONFIG_MPEG2_D3D11VA2_HWACCEL
+                         HWACCEL_D3D11VA2(mpeg2),
+ #endif
++#if CONFIG_MPEG2_D3D12_HWACCEL
++                        HWACCEL_D3D12(mpeg2),
++#endif
+ #if CONFIG_MPEG2_NVDEC_HWACCEL
+                         HWACCEL_NVDEC(mpeg2),
+ #endif
+diff --git a/libavcodec/vc1dec.c b/libavcodec/vc1dec.c
+index 185f887b4e..f108786209 100644
+--- a/libavcodec/vc1dec.c
++++ b/libavcodec/vc1dec.c
+@@ -1207,6 +1207,9 @@ static const enum AVPixelFormat vc1_hwaccel_pixfmt_list_420[] = {
+     AV_PIX_FMT_D3D11VA_VLD,
+     AV_PIX_FMT_D3D11,
+ #endif
++#if CONFIG_VC1_D3D12_HWACCEL
++    AV_PIX_FMT_D3D12_VLD,
++#endif
+ #if CONFIG_VC1_NVDEC_HWACCEL
+     AV_PIX_FMT_CUDA,
+ #endif
+@@ -1242,6 +1245,9 @@ const AVCodec ff_vc1_decoder = {
+ #if CONFIG_VC1_D3D11VA2_HWACCEL
+                         HWACCEL_D3D11VA2(vc1),
+ #endif
++#if CONFIG_VC1_D3D12_HWACCEL
++                        HWACCEL_D3D12(vc1),
++#endif
+ #if CONFIG_VC1_NVDEC_HWACCEL
+                         HWACCEL_NVDEC(vc1),
+ #endif
+@@ -1279,6 +1285,9 @@ const AVCodec ff_wmv3_decoder = {
+ #if CONFIG_WMV3_D3D11VA2_HWACCEL
+                         HWACCEL_D3D11VA2(wmv3),
+ #endif
++#if CONFIG_WMV3_D3D12_HWACCEL
++                        HWACCEL_D3D12(wmv3),
++#endif
+ #if CONFIG_WMV3_NVDEC_HWACCEL
+                         HWACCEL_NVDEC(wmv3),
+ #endif
+diff --git a/libavcodec/version.h b/libavcodec/version.h
+index 7a8852bf15..27c126ee7d 100644
+--- a/libavcodec/version.h
++++ b/libavcodec/version.h
+@@ -27,8 +27,8 @@
+ 
+ #include "libavutil/version.h"
+ 
+-#define LIBAVCODEC_VERSION_MAJOR  59
+-#define LIBAVCODEC_VERSION_MINOR  17
++#define LIBAVCODEC_VERSION_MAJOR  58
++#define LIBAVCODEC_VERSION_MINOR  60
+ #define LIBAVCODEC_VERSION_MICRO 100
+ 
+ #define LIBAVCODEC_VERSION_INT  AV_VERSION_INT(LIBAVCODEC_VERSION_MAJOR, \
+@@ -51,17 +51,90 @@
+  * at once through the bump. This improves the git bisect-ability of the change.
+  */
+ 
+-#define FF_API_OPENH264_SLICE_MODE (LIBAVCODEC_VERSION_MAJOR < 60)
+-#define FF_API_OPENH264_CABAC      (LIBAVCODEC_VERSION_MAJOR < 60)
+-#define FF_API_UNUSED_CODEC_CAPS   (LIBAVCODEC_VERSION_MAJOR < 60)
+-#define FF_API_THREAD_SAFE_CALLBACKS (LIBAVCODEC_VERSION_MAJOR < 60)
+-#define FF_API_DEBUG_MV          (LIBAVCODEC_VERSION_MAJOR < 60)
+-#define FF_API_GET_FRAME_CLASS     (LIBAVCODEC_VERSION_MAJOR < 60)
+-#define FF_API_AUTO_THREADS        (LIBAVCODEC_VERSION_MAJOR < 60)
+-#define FF_API_INIT_PACKET         (LIBAVCODEC_VERSION_MAJOR < 60)
+-#define FF_API_AVCTX_TIMEBASE    (LIBAVCODEC_VERSION_MAJOR < 60)
+-#define FF_API_MPEGVIDEO_OPTS      (LIBAVCODEC_VERSION_MAJOR < 60)
+-#define FF_API_FLAG_TRUNCATED      (LIBAVCODEC_VERSION_MAJOR < 60)
+-#define FF_API_SUB_TEXT_FORMAT     (LIBAVCODEC_VERSION_MAJOR < 60)
++#ifndef FF_API_LOWRES
++#define FF_API_LOWRES            (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_DEBUG_MV
++#define FF_API_DEBUG_MV          (LIBAVCODEC_VERSION_MAJOR < 58)
++#endif
++#ifndef FF_API_AVCTX_TIMEBASE
++#define FF_API_AVCTX_TIMEBASE    (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_CODED_FRAME
++#define FF_API_CODED_FRAME       (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_SIDEDATA_ONLY_PKT
++#define FF_API_SIDEDATA_ONLY_PKT (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_VDPAU_PROFILE
++#define FF_API_VDPAU_PROFILE     (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_CONVERGENCE_DURATION
++#define FF_API_CONVERGENCE_DURATION (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_AVPICTURE
++#define FF_API_AVPICTURE         (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_AVPACKET_OLD_API
++#define FF_API_AVPACKET_OLD_API (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_RTP_CALLBACK
++#define FF_API_RTP_CALLBACK      (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_VBV_DELAY
++#define FF_API_VBV_DELAY         (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_CODER_TYPE
++#define FF_API_CODER_TYPE        (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_STAT_BITS
++#define FF_API_STAT_BITS         (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_PRIVATE_OPT
++#define FF_API_PRIVATE_OPT      (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_ASS_TIMING
++#define FF_API_ASS_TIMING       (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_OLD_BSF
++#define FF_API_OLD_BSF          (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_COPY_CONTEXT
++#define FF_API_COPY_CONTEXT     (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_GET_CONTEXT_DEFAULTS
++#define FF_API_GET_CONTEXT_DEFAULTS (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_NVENC_OLD_NAME
++#define FF_API_NVENC_OLD_NAME    (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_STRUCT_VAAPI_CONTEXT
++#define FF_API_STRUCT_VAAPI_CONTEXT (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_MERGE_SD_API
++#define FF_API_MERGE_SD_API      (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_TAG_STRING
++#define FF_API_TAG_STRING        (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_GETCHROMA
++#define FF_API_GETCHROMA         (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_CODEC_GET_SET
++#define FF_API_CODEC_GET_SET     (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_USER_VISIBLE_AVHWACCEL
++#define FF_API_USER_VISIBLE_AVHWACCEL (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_LOCKMGR
++#define FF_API_LOCKMGR (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_NEXT
++#define FF_API_NEXT              (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++#ifndef FF_API_UNSANITIZED_BITRATES
++#define FF_API_UNSANITIZED_BITRATES (LIBAVCODEC_VERSION_MAJOR < 59)
++#endif
++
+ 
+ #endif /* AVCODEC_VERSION_H */
+diff --git a/libavcodec/vp9.c b/libavcodec/vp9.c
+index 1c749283a1..16abe528ea 100644
+--- a/libavcodec/vp9.c
++++ b/libavcodec/vp9.c
+@@ -205,6 +205,9 @@ static int update_size(AVCodecContext *avctx, int w, int h)
+             *fmtp++ = AV_PIX_FMT_D3D11VA_VLD;
+             *fmtp++ = AV_PIX_FMT_D3D11;
+ #endif
++#if CONFIG_VP9_D3D12_HWACCEL
++            *fmtp++ = AV_PIX_FMT_D3D12_VLD;
++#endif
+ #if CONFIG_VP9_NVDEC_HWACCEL
+             *fmtp++ = AV_PIX_FMT_CUDA;
+ #endif
+@@ -1886,6 +1889,9 @@ const AVCodec ff_vp9_decoder = {
+ #if CONFIG_VP9_D3D11VA2_HWACCEL
+                                HWACCEL_D3D11VA2(vp9),
+ #endif
++#if CONFIG_VP9_D3D12_HWACCEL
++                               HWACCEL_D3D12(vp9),
++#endif
+ #if CONFIG_VP9_NVDEC_HWACCEL
+                                HWACCEL_NVDEC(vp9),
+ #endif
+diff --git a/libavutil/pixdesc.c b/libavutil/pixdesc.c
+index 727d7540b3..7023400e03 100644
+--- a/libavutil/pixdesc.c
++++ b/libavutil/pixdesc.c
+@@ -1720,6 +1720,12 @@ static const AVPixFmtDescriptor av_pix_fmt_descriptors[AV_PIX_FMT_NB] = {
+         .log2_chroma_h = 1,
+         .flags = AV_PIX_FMT_FLAG_HWACCEL,
+     },
++    [AV_PIX_FMT_D3D12_VLD] = {
++        .name = "d3d12_vld",
++        .log2_chroma_w = 1,
++        .log2_chroma_h = 1,
++        .flags = AV_PIX_FMT_FLAG_HWACCEL,
++    },
+     [AV_PIX_FMT_DXVA2_VLD] = {
+         .name = "dxva2_vld",
+         .log2_chroma_w = 1,
+diff --git a/libavutil/pixfmt.h b/libavutil/pixfmt.h
+index 02e355eb4d..e09a337235 100644
+--- a/libavutil/pixfmt.h
++++ b/libavutil/pixfmt.h
+@@ -338,6 +338,11 @@ enum AVPixelFormat {
+     AV_PIX_FMT_NV24,      ///< planar YUV 4:4:4, 24bpp, 1 plane for Y and 1 plane for the UV components, which are interleaved (first byte U and the following byte V)
+     AV_PIX_FMT_NV42,      ///< as above, but U and V bytes are swapped
+ 
++    /*
++     * Direct3D12 hardware decoder
++     */
++    AV_PIX_FMT_D3D12_VLD,  ///< HW decoding through Direct3D12, Picture.data[3] contains the resource index in the AVD3D12VAContext.surfaces
++
+     /**
+      * Vulkan hardware images.
+      *
