@@ -118,6 +118,9 @@ class CDecD3D12 : public CDecAvcodec
     ID3D12VideoDevice* m_pVideoDevice;
     D3D12_VIDEO_DECODER_HEAP_DESC m_pVideoDecoderCfg;
 
+    //for the copy data
+    CRITICAL_SECTION directLock; // the ReportSize callback cannot be called during/after the Cleanup_cb is called
+
     const d3d_format_t* render_fmt;
     ID3D12VideoDecoder* m_pVideoDecoder;
     
