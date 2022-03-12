@@ -40,7 +40,7 @@ ILAVDecoder *CreateDecoderD3D12()
     return new CDecD3D12();
 }
 
-STDMETHODIMP VerifyD3D12Device(DWORD &dwIndex, DWORD dwDeviceId)
+HRESULT VerifyD3D12Device(DWORD& dwIndex, DWORD dwDeviceId)
 {
     HRESULT hr = S_OK;
     DXGI_ADAPTER_DESC desc;
@@ -51,18 +51,18 @@ STDMETHODIMP VerifyD3D12Device(DWORD &dwIndex, DWORD dwDeviceId)
         hr = E_FAIL;
         goto done;
     }
-
-    PFN_CREATE_DXGI_FACTORY1 mCreateDXGIFactory1 = (PFN_CREATE_DXGI_FACTORY1)GetProcAddress(dxgi, "CreateDXGIFactory1");
-    if (mCreateDXGIFactory1 == nullptr)
+    
+    PFN_CREATE_DXGI_FACTORY2 mCreateDXGIFactory2 = (PFN_CREATE_DXGI_FACTORY2)GetProcAddress(dxgi, "CreateDXGIFactory2");
+    if (mCreateDXGIFactory2 == nullptr)
     {
         hr = E_FAIL;
         goto done;
     }
 
     IDXGIAdapter* pDXGIAdapter = nullptr;
-    IDXGIFactory1* pDXGIFactory = nullptr;
+    IDXGIFactory2* pDXGIFactory = nullptr;
 
-    hr = mCreateDXGIFactory1(IID_IDXGIFactory1, (void**)&pDXGIFactory);
+    hr = mCreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&pDXGIFactory));
     if (FAILED(hr))
         goto done;
 
@@ -165,6 +165,38 @@ STDMETHODIMP CDecD3D12::DestroyDecoder(bool bFull)
 // ILAVDecoder
 STDMETHODIMP CDecD3D12::Init()
 {
+    // D3D12 decoding requires Windows 8 or newer
+    if (!IsWindows8OrNewer())
+        return E_NOINTERFACE;
+
+    dx.d3d12lib = LoadLibrary(L"d3d12.dll");
+    if (dx.d3d12lib == nullptr)
+    {
+        DbgLog((LOG_TRACE, 10, L"Cannot open d3d11.dll"));
+        return E_FAIL;
+    }
+
+    dx.mD3D12CreateDevice = (PFN_D3D12_CREATE_DEVICE)GetProcAddress(dx.d3d12lib, "D3D12CreateDevice");
+    if (dx.mD3D12CreateDevice == nullptr)
+    {
+        DbgLog((LOG_TRACE, 10, L"D3D11CreateDevice not available"));
+        return E_FAIL;
+    }
+
+    dx.dxgilib = LoadLibrary(L"dxgi.dll");
+    if (dx.dxgilib == nullptr)
+    {
+        DbgLog((LOG_TRACE, 10, L"Cannot open dxgi.dll"));
+        return E_FAIL;
+    }
+
+    dx.mCreateDXGIFactory2 = (PFN_CREATE_DXGI_FACTORY2)GetProcAddress(dx.dxgilib, "CreateDXGIFactory2");
+    if (dx.mCreateDXGIFactory2 == nullptr)
+    {
+        DbgLog((LOG_TRACE, 10, L"CreateDXGIFactory1 not available"));
+        return E_FAIL;
+    }
+
     return S_OK;
 }
 
@@ -186,10 +218,7 @@ STDMETHODIMP CDecD3D12::InitAllocator(IMemAllocator **ppAlloc)
 STDMETHODIMP CDecD3D12::CreateD3D12Device(UINT nDeviceIndex)
 {
     HRESULT hr = S_OK;
-    
-    // ComPtr<ID3D12VideoDecoder> decoder;
-    // ComPtr<ID3D12VideoDevice> videodevice12;
-    // create DXGI factory
+
     if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&m_pD3DDebug))))
     {
         m_pD3DDebug->EnableDebugLayer();
@@ -197,29 +226,40 @@ STDMETHODIMP CDecD3D12::CreateD3D12Device(UINT nDeviceIndex)
         //m_pD3DDebug1->SetEnableGPUBasedValidation(true);
         m_pD3DDebug1->SetEnableSynchronizedCommandQueueValidation(1);
     }
-    hr = CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&m_pDxgiFactory));
+
+    // create DXGI factory
+    IDXGIAdapter* pDXGIAdapter = nullptr;
+    IDXGIFactory1* pDXGIFactory = nullptr;
+    hr = dx.mCreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&m_pDxgiFactory));
+    if (FAILED(hr))
+    {
+        DbgLog((LOG_ERROR, 10, L"-> DXGIFactory creation failed"));
+        //goto fail;
+    }
+    
+    //hr = CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&m_pDxgiFactory));
     if FAILED (hr)
         assert(0);
 
-    if (DXGI_ERROR_NOT_FOUND == m_pDxgiFactory->EnumAdapters1(0, &m_pDxgiAdapter))
+    if (DXGI_ERROR_NOT_FOUND == m_pDxgiFactory->EnumAdapters(nDeviceIndex, &m_pDxgiAdapter))
     {
         hr = S_FALSE;
         assert(0);
     }
-    DXGI_ADAPTER_DESC1 desc;
-    hr = m_pDxgiAdapter->GetDesc1(&desc);
+    DXGI_ADAPTER_DESC desc;
+    hr = m_pDxgiAdapter->GetDesc(&desc);
     if FAILED (hr)
         assert(0);
     const D3D_FEATURE_LEVEL *levels = NULL;
     D3D_FEATURE_LEVEL max_level = D3D_FEATURE_LEVEL_12_1;
     //int level_count = s_GetD3D12FeatureLevels(max_level, &levels);
 
-    hr = D3D12CreateDevice(m_pDxgiAdapter, max_level, IID_PPV_ARGS(&m_pD3DDevice));
+    hr = dx.mD3D12CreateDevice(m_pDxgiAdapter, max_level, IID_PPV_ARGS(&m_pD3DDevice));
     if FAILED (hr)
         assert(0);
     
     
-
+    
     hr = m_pD3DDevice->QueryInterface(IID_PPV_ARGS(&m_pVideoDevice));
     return hr;
 }
@@ -254,7 +294,7 @@ STDMETHODIMP CDecD3D12::PostConnect(IPin *pPin)
 
     
     //UINT nDevice = LAVHWACCEL_DEVICE_DEFAULT;
-    UINT nDevice = m_pSettings->GetHWAccelDeviceIndex(HWAccel_D3D11, nullptr);
+    UINT nDevice = m_pSettings->GetHWAccelDeviceIndex(HWAccel_D3D12, nullptr);
     if (!m_pD3DDevice)
     {
         hr = CreateD3D12Device(nDevice);
@@ -350,11 +390,30 @@ HRESULT CDecD3D12::AdditionaDecoderInit()
 
 enum AVPixelFormat CDecD3D12::get_d3d12_format(struct AVCodecContext *s, const enum AVPixelFormat *pix_fmts)
 {
-    CDecD3D12 *pDec = (CDecD3D12 *)s->opaque;
-    HRESULT hr = pDec->ReInitD3D12Decoder(s);
-    if (SUCCEEDED(hr))
-    return AV_PIX_FMT_D3D12_VLD;
-    
+    CDecD3D12* pDec = (CDecD3D12*)s->opaque;
+    const enum AVPixelFormat* p;
+    for (p = pix_fmts; *p != -1; p++)
+    {
+        const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(*p);
+
+        if (!desc || !(desc->flags & AV_PIX_FMT_FLAG_HWACCEL))
+            break;
+
+        if (*p == AV_PIX_FMT_D3D12_VLD)
+        {
+            HRESULT hr = pDec->ReInitD3D12Decoder(s);
+            if (FAILED(hr))
+            {
+                pDec->m_bFailHWDecode = TRUE;
+                continue;
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+    return *p;
 }
 void CDecD3D12::ReleaseFrame12(void* opaque, uint8_t* data)
 {
@@ -510,19 +569,37 @@ STDMETHODIMP CDecD3D12::FindVideoServiceConversion(AVCodecID codec, int profile,
 {
 
     HRESULT hr = S_OK;
-    
-    
-    for (unsigned i = 0; dxva_modes[i].name; i++)
+    *input = GUID_NULL;
+    if (codec == AV_CODEC_ID_MPEG2VIDEO)
+        *input = D3D12_VIDEO_DECODE_PROFILE_MPEG1_AND_MPEG2;
+    if (codec == AV_CODEC_ID_HEVC)
     {
-        if (dxva_modes[i].codec == codec)
-            if (profile != 0)
-                if (dxva_modes[i].profiles)
-                    for (int x = 0; dxva_modes[i].profiles[x] != FF_PROFILE_UNKNOWN; x++)
-                        if (dxva_modes[i].profiles[x] == profile)
-                            *input = *dxva_modes[i].guid;
-            else
-                            *input = *dxva_modes[i].guid;
+        //need some testing
+        if (!HEVC_CHECK_PROFILE(profile))
+            *input = D3D12_VIDEO_DECODE_PROFILE_HEVC_MAIN;
+        else
+            *input = D3D12_VIDEO_DECODE_PROFILE_HEVC_MAIN10;
     }
+    const int h264mb_count = (m_pAVCtx->coded_width / 16) * (m_pAVCtx->coded_height / 16);
+
+    if (codec == AV_CODEC_ID_H264)
+    {
+        if (profile != FF_PROFILE_UNKNOWN && !H264_CHECK_PROFILE(profile))
+            *input = D3D12_VIDEO_DECODE_PROFILE_H264;
+        *input = D3D12_VIDEO_DECODE_PROFILE_H264;
+    }
+
+
+    if ((codec == AV_CODEC_ID_WMV3 || codec == AV_CODEC_ID_VC1) && profile == FF_PROFILE_VC1_COMPLEX)
+    {
+        *input = D3D12_VIDEO_DECODE_PROFILE_VC1;
+        //need to find which one we need
+        //D3D12_VIDEO_DECODE_PROFILE_VC1_D2010
+        
+    }
+ 
+    if (codec == AV_CODEC_ID_AV1)
+        *input = D3D12_VIDEO_DECODE_PROFILE_AV1_PROFILE0;
 
     if (IsEqualGUID(*input, GUID_NULL))
         return E_FAIL;
@@ -678,44 +755,6 @@ STDMETHODIMP CDecD3D12::CreateD3D12Decoder()
     return E_FAIL;
 }
 
-STDMETHODIMP CDecD3D12::AllocateFramesContext(int width, int height, AVPixelFormat format, int nSurfaces,
-                                              AVBufferRef **ppFramesCtx)
-{
-    ASSERT(m_pAVCtx);
-    
-    ASSERT(ppFramesCtx);
-    av_buffer_unref(ppFramesCtx);
-    
-    //*ppFramesCtx = av_hwframe_ctx_alloc(m_pDevCtx);
-    if (*ppFramesCtx == nullptr)
-        return E_OUTOFMEMORY;
-
-    AVHWFramesContext *pFrames = (AVHWFramesContext *)(*ppFramesCtx)->data;
-    AVHWDeviceContext *device_ctx = pFrames->device_ctx;
-    
-    pFrames->format = AV_PIX_FMT_D3D12_VLD;
-    pFrames->sw_format = (format == AV_PIX_FMT_YUV420P10) ? AV_PIX_FMT_P010 : AV_PIX_FMT_NV12;
-    pFrames->width = width;
-    pFrames->height = height;
-    pFrames->initial_pool_size = nSurfaces;
-    
-    //DeviceContext->get_decoder_buffer = GetDecodeBuffer;
-    //pDeviceContext->set_picparams_h264 = SetPicParamsH264;
-    //pDeviceContext->create_d3d12ressource = CreateD3D12Ressource;
-    int ret = av_hwframe_ctx_init(*ppFramesCtx);
-    
-    /* char errbuf[128];
-    const char *errbuf_ptr = errbuf;
-    int ret2 = av_strerror(ret, errbuf, sizeof(errbuf));
-    ret2 = ENOMEM;*/
-    if (ret < 0)
-    {
-        //av_buffer_unref(ppFramesCtx);
-        return E_FAIL;
-    }
-
-    return S_OK;
-}
 
 HRESULT CDecD3D12::HandleDXVA2Frame(LAVFrame *pFrame)
 {

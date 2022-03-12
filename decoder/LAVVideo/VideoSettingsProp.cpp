@@ -253,10 +253,12 @@ HRESULT CLAVVideoSettingsProp::OnActivate()
     WCHAR hwAccelDXVA2CB[] = L"DXVA2 (copy-back)";
     WCHAR hwAccelDXVA2N[] = L"DXVA2 (native)";
     WCHAR hwAccelD3D11[] = L"D3D11";
+    WCHAR hwAccelD3D12[] = L"D3D12 Experimental";
     AddComboBoxEntryWithData(m_Dlg, IDC_HWACCEL, hwAccelNone, HWAccel_None);
     AddComboBoxEntryWithData(m_Dlg, IDC_HWACCEL, hwAccelDXVA2CB, HWAccel_DXVA2CopyBack);
     AddComboBoxEntryWithData(m_Dlg, IDC_HWACCEL, hwAccelDXVA2N, HWAccel_DXVA2Native);
     AddComboBoxEntryWithData(m_Dlg, IDC_HWACCEL, hwAccelD3D11, HWAccel_D3D11);
+    AddComboBoxEntryWithData(m_Dlg, IDC_HWACCEL, hwAccelD3D12, HWAccel_D3D12);
     AddComboBoxEntryWithData(m_Dlg, IDC_HWACCEL, hwAccelCUDA, HWAccel_CUDA);
     AddComboBoxEntryWithData(m_Dlg, IDC_HWACCEL, hwAccelQuickSync, HWAccel_QuickSync);
 

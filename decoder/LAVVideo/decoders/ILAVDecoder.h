@@ -469,3 +469,4 @@ ILAVDecoder *CreateDecoderD3D12();
 
 HRESULT VerifyD3D9Device(DWORD &dwIndex, DWORD dwDeviceId);
 HRESULT VerifyD3D11Device(DWORD &dwIndex, DWORD dwDeviceId);
+HRESULT VerifyD3D12Device(DWORD& dwIndex, DWORD dwDeviceId);

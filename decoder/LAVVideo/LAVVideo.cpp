@@ -2916,6 +2916,27 @@ STDMETHODIMP_(DWORD) CLAVVideo::GetHWAccelDeviceIndex(LAVHWAccel hwAccel, DWORD 
 
         return dwDeviceIndex;
     }
+    else if (hwAccel == HWAccel_D3D12)
+    {
+        DWORD dwDeviceIndex = m_settings.HWAccelDeviceD3D11;
+        DWORD dwDeviceId = m_settings.HWAccelDeviceD3D11Desc;
+
+        // verify the values and re-match them to adapters appropriately
+        if (dwDeviceIndex != LAVHWACCEL_DEVICE_DEFAULT && dwDeviceId != 0)
+        {
+            hr = VerifyD3D12Device(dwDeviceIndex, dwDeviceId);
+            if (FAILED(hr))
+            {
+                dwDeviceIndex = LAVHWACCEL_DEVICE_DEFAULT;
+                dwDeviceId = 0;
+            }
+        }
+
+        if (pdwDeviceIdentifier)
+            *pdwDeviceIdentifier = dwDeviceId;
+
+        return dwDeviceIndex;
+    }
 
     if (pdwDeviceIdentifier)
         *pdwDeviceIdentifier = 0;

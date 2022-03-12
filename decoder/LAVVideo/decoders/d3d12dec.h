@@ -40,8 +40,8 @@ extern "C"
 }
 
 
-typedef HRESULT(WINAPI *PFN_CREATE_DXGI_FACTORY1)(REFIID riid, void **ppFactory);
-
+//typedef HRESULT(WINAPI *PFN_CREATE_DXGI_FACTORY1)(REFIID riid, void **ppFactory);
+typedef HRESULT(WINAPI *PFN_CREATE_DXGI_FACTORY2)(UINT Flags, REFIID riid, _COM_Outptr_ void** ppFactory);
 //todo surface pool
 class CDecD3D12 : public CDecAvcodec
 {
@@ -95,12 +95,8 @@ class CDecD3D12 : public CDecAvcodec
     STDMETHODIMP DestroyDecoder(bool bFull);
 
     STDMETHODIMP ReInitD3D12Decoder(AVCodecContext *s);
-
     STDMETHODIMP CreateD3D12Device(UINT nDeviceIndex);
-
     STDMETHODIMP CreateD3D12Decoder();
-    STDMETHODIMP AllocateFramesContext(int width, int height, AVPixelFormat format, int nSurfaces,
-                                       AVBufferRef **pFramesCtx);
 
     STDMETHODIMP FillHWContext(AVD3D12VAContext *ctx);
 
@@ -118,7 +114,7 @@ class CDecD3D12 : public CDecAvcodec
     CD3D12Commands* m_pD3DCommands;
     ID3D12Debug* m_pD3DDebug;
     ID3D12Debug1* m_pD3DDebug1;
-    ID3D12Device* m_pD3DDevice;
+    ID3D12Device2* m_pD3DDevice;
     ID3D12VideoDevice* m_pVideoDevice;
     D3D12_VIDEO_DECODER_HEAP_DESC m_pVideoDecoderCfg;
 
@@ -139,7 +135,7 @@ class CDecD3D12 : public CDecAvcodec
     d3d12_footprint_t m_pStagingLayout;
     AVFrame* m_pFrame = nullptr;
     
-    IDXGIAdapter1 *m_pDxgiAdapter;
+    IDXGIAdapter *m_pDxgiAdapter;
     IDXGIFactory2 *m_pDxgiFactory;
 
     DWORD m_dwSurfaceWidth = 0;
@@ -158,6 +154,16 @@ class CDecD3D12 : public CDecAvcodec
 
     int m_FrameQueuePosition = 0;
     int m_DisplayDelay = 4;
+
+    struct
+    {
+        HMODULE d3d12lib;
+        PFN_D3D12_CREATE_DEVICE mD3D12CreateDevice;
+
+        HMODULE dxgilib;
+        PFN_CREATE_DXGI_FACTORY2 mCreateDXGIFactory2;
+
+    } dx = { 0 };
 
     DXGI_ADAPTER_DESC m_AdapterDesc = {0};
     friend class CD3D12SurfaceAllocator;
