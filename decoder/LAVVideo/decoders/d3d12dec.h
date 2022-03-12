@@ -1,5 +1,6 @@
 /*
  *      Copyright (C) 2017-2021 Hendrik Leppkes
+ *      Copyright (C) 2021      Benoit Plourde
  *      http://www.1f0.de
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -105,7 +106,9 @@ class CDecD3D12 : public CDecAvcodec
 
     STDMETHODIMP FlushDisplayQueue(BOOL bDeliver);
 
-    static enum AVPixelFormat get_d3d12_format(struct AVCodecContext *s, const enum AVPixelFormat *pix_fmts);
+    STDMETHODIMP FindVideoServiceConversion(AVCodecID codec, int profile, DXGI_FORMAT surface_format, GUID* input);
+
+    static enum AVPixelFormat get_d3d12_format(struct AVCodecContext* s, const enum AVPixelFormat* pix_fmts);
     static int get_d3d12_buffer(struct AVCodecContext *c, AVFrame *pic, int flags);
     static void ReleaseFrame12(void* opaque, uint8_t* data);
     static void log_callback_null(void *ptr, int level, const char *fmt, va_list vl);

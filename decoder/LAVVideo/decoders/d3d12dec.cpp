@@ -1,5 +1,6 @@
 /*
  *      Copyright (C) 2017-2021 Hendrik Leppkes
+ *      Copyright (C) 2021      Benoit Plourde
  *      http://www.1f0.de
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -42,6 +43,63 @@ ILAVDecoder *CreateDecoderD3D12()
 STDMETHODIMP VerifyD3D12Device(DWORD &dwIndex, DWORD dwDeviceId)
 {
     HRESULT hr = S_OK;
+    DXGI_ADAPTER_DESC desc;
+
+    HMODULE dxgi = LoadLibrary(L"dxgi.dll");
+    if (dxgi == nullptr)
+    {
+        hr = E_FAIL;
+        goto done;
+    }
+
+    PFN_CREATE_DXGI_FACTORY1 mCreateDXGIFactory1 = (PFN_CREATE_DXGI_FACTORY1)GetProcAddress(dxgi, "CreateDXGIFactory1");
+    if (mCreateDXGIFactory1 == nullptr)
+    {
+        hr = E_FAIL;
+        goto done;
+    }
+
+    IDXGIAdapter* pDXGIAdapter = nullptr;
+    IDXGIFactory1* pDXGIFactory = nullptr;
+
+    hr = mCreateDXGIFactory1(IID_IDXGIFactory1, (void**)&pDXGIFactory);
+    if (FAILED(hr))
+        goto done;
+
+    // check the adapter specified by dwIndex
+    hr = pDXGIFactory->EnumAdapters(dwIndex, &pDXGIAdapter);
+    if (FAILED(hr))
+        goto done;
+
+    // if it matches the device id, then all is well and we're done
+    pDXGIAdapter->GetDesc(&desc);
+    if (desc.DeviceId == dwDeviceId)
+        goto done;
+
+    SafeRelease(&pDXGIAdapter);
+
+    // try to find a device that matches this device id
+    UINT i = 0;
+    while (SUCCEEDED(pDXGIFactory->EnumAdapters(i, &pDXGIAdapter)))
+    {
+        pDXGIAdapter->GetDesc(&desc);
+        SafeRelease(&pDXGIAdapter);
+
+        if (desc.DeviceId == dwDeviceId)
+        {
+            dwIndex = i;
+            goto done;
+        }
+        i++;
+    }
+
+    // if none is found, fail
+    hr = E_FAIL;
+
+done:
+    SafeRelease(&pDXGIAdapter);
+    SafeRelease(&pDXGIFactory);
+    FreeLibrary(dxgi);
     return hr;
 }
 
@@ -138,9 +196,6 @@ STDMETHODIMP CDecD3D12::CreateD3D12Device(UINT nDeviceIndex)
         m_pD3DDebug->QueryInterface(IID_PPV_ARGS(&m_pD3DDebug1));
         //m_pD3DDebug1->SetEnableGPUBasedValidation(true);
         m_pD3DDebug1->SetEnableSynchronizedCommandQueueValidation(1);
-        
-        
-
     }
     hr = CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&m_pDxgiFactory));
     if FAILED (hr)
@@ -297,15 +352,16 @@ enum AVPixelFormat CDecD3D12::get_d3d12_format(struct AVCodecContext *s, const e
 {
     CDecD3D12 *pDec = (CDecD3D12 *)s->opaque;
     HRESULT hr = pDec->ReInitD3D12Decoder(s);
-
+    if (SUCCEEDED(hr))
     return AV_PIX_FMT_D3D12_VLD;
+    
 }
 void CDecD3D12::ReleaseFrame12(void* opaque, uint8_t* data)
 {
     (void)data;
 
     //LAVFrame* pFrame = (LAVFrame*)opaque;
-
+   
 #if 0
     if (pFrame->destruct)
     {
@@ -422,8 +478,9 @@ STDMETHODIMP CDecD3D12::Flush()
         ref_free_index.push_back(i);
 
     CDecAvcodec::Flush();
-/*    */
+
     // Flush display queue
+    //TODO add display queue
     FlushDisplayQueue(FALSE);
 
     return S_OK;
@@ -449,163 +506,135 @@ HRESULT CDecD3D12::PostDecode()
     return S_OK;
 }
 
+STDMETHODIMP CDecD3D12::FindVideoServiceConversion(AVCodecID codec, int profile, DXGI_FORMAT surface_format, GUID* input)
+{
+
+    HRESULT hr = S_OK;
+    
+    
+    for (unsigned i = 0; dxva_modes[i].name; i++)
+    {
+        if (dxva_modes[i].codec == codec)
+            if (profile != 0)
+                if (dxva_modes[i].profiles)
+                    for (int x = 0; dxva_modes[i].profiles[x] != FF_PROFILE_UNKNOWN; x++)
+                        if (dxva_modes[i].profiles[x] == profile)
+                            *input = *dxva_modes[i].guid;
+            else
+                            *input = *dxva_modes[i].guid;
+    }
+
+    if (IsEqualGUID(*input, GUID_NULL))
+        return E_FAIL;
+    return hr;
+}
 
 STDMETHODIMP CDecD3D12::ReInitD3D12Decoder(AVCodecContext* s)
 {
-    CDecD3D12* pDec = (CDecD3D12*)s->opaque;
     HRESULT hr = S_OK;
     // Don't allow decoder creation during first init
     if (m_bInInit)
         return S_FALSE;
 
+
+    DXGI_FORMAT surface_format;
+    switch (m_pAVCtx->sw_pix_fmt)
+    {
+        case AV_PIX_FMT_YUV420P10LE:
+        case AV_PIX_FMT_P010:
+            surface_format = DXGI_FORMAT_P010;
+            break;
+        case AV_PIX_FMT_NV12:
+        default: surface_format = DXGI_FORMAT_NV12;
+    }
     D3D12_VIDEO_DECODER_DESC decoderDesc;
     CD3D12Format* fmt = new CD3D12Format();
-
-    //D3D12_OPAQUE
-    //bits 8 width and height 2
-    //D3D12_OPAQUE_BGRA
-    //bits 8 width and height 1
-
-    const d3d_format_t* processorInput[4];
-    int idx = 0;
+    GUID profileGUID = GUID_NULL;
+    hr = FindVideoServiceConversion(s->codec_id, s->profile, surface_format, &profileGUID);
+    int idx, surface_idx = 0;
     const d3d_format_t* decoder_format;
     int bitdepth = 8;
     int chromah, chromaw;
     UINT supportFlags = D3D12_FORMAT_SUPPORT1_DECODER_OUTPUT | D3D12_FORMAT_SUPPORT1_SHADER_LOAD;
-    for (int i = 0; i < 2; i++)
-    {
-        if (i == 0)
-            chromah = chromaw = 2;
-        else if (i == 1)
-            chromah = chromaw = 1;
-        decoder_format = fmt->FindD3D12Format(pDec->m_pD3DDevice, 0, DXGI_RGB_FORMAT | DXGI_YUV_FORMAT,
-            bitdepth, chromah + 1, chromaw + 1,
-            DXGI_CHROMA_GPU, supportFlags);
-        if (decoder_format == NULL)
-            decoder_format = fmt->FindD3D12Format(pDec->m_pD3DDevice, 0, DXGI_RGB_FORMAT | DXGI_YUV_FORMAT,
-                bitdepth, 0, 0, DXGI_CHROMA_GPU, supportFlags);
-        if (decoder_format == NULL && bitdepth > 10)
-            decoder_format = fmt->FindD3D12Format(pDec->m_pD3DDevice, 0, DXGI_RGB_FORMAT | DXGI_YUV_FORMAT,
-                10, 0, 0, DXGI_CHROMA_GPU, supportFlags);
-        if (decoder_format == NULL)
-            decoder_format = fmt->FindD3D12Format(pDec->m_pD3DDevice, 0, DXGI_RGB_FORMAT | DXGI_YUV_FORMAT,
-                0, 0, 0, DXGI_CHROMA_GPU, supportFlags);
-        if (decoder_format != NULL)
-        {
-            processorInput[idx++] = decoder_format;
-        }
-
-    }
-    
-    processorInput[idx++] = fmt->D3D12_FindDXGIFormat(DXGI_FORMAT_420_OPAQUE);
-
+ 
+   
     D3D12_FEATURE_DATA_VIDEO_DECODE_FORMAT_COUNT decode_formats;
     decode_formats.NodeIndex = 0;
     decode_formats.FormatCount = 0;
-    if (s->codec->id == AV_CODEC_ID_H264)
-    {
-        decode_formats.Configuration.DecodeProfile = D3D12_VIDEO_DECODE_PROFILE_H264;
-        if (decoder_format == NULL || decoder_format->formatTexture != DXGI_FORMAT_NV12)
-            processorInput[idx++] = fmt->D3D12_FindDXGIFormat(DXGI_FORMAT_NV12);
-    }
-    else if (s->codec->id == AV_CODEC_ID_HEVC)
-    {
-    
-        decode_formats.Configuration.DecodeProfile = D3D12_VIDEO_DECODE_PROFILE_HEVC_MAIN10;
-        if (decoder_format == NULL || decoder_format->formatTexture != DXGI_FORMAT_P010)
-        processorInput[idx++] = fmt->D3D12_FindDXGIFormat(DXGI_FORMAT_P010);
-    }
+    decode_formats.Configuration.DecodeProfile = profileGUID;
     decode_formats.Configuration.InterlaceType = D3D12_VIDEO_FRAME_CODED_INTERLACE_TYPE_NONE;
     decode_formats.Configuration.BitstreamEncryption = D3D12_BITSTREAM_ENCRYPTION_TYPE_NONE;
-    hr = pDec->m_pVideoDevice->CheckFeatureSupport(D3D12_FEATURE_VIDEO_DECODE_FORMAT_COUNT, &decode_formats, sizeof(decode_formats));
-    if (FAILED(hr) || decode_formats.FormatCount == 0)
-    {
-
+    hr = m_pVideoDevice->CheckFeatureSupport(D3D12_FEATURE_VIDEO_DECODE_FORMAT_COUNT, &decode_formats, sizeof(decode_formats));
+    if (FAILED(hr))
         return S_FALSE;
-    }
 
-    //std::vector<DXGI_FORMAT> supported_formats;
+    
     DXGI_FORMAT supported_formats[10];
     D3D12_FEATURE_DATA_VIDEO_DECODE_FORMATS formats;
     formats.NodeIndex = 0;
+    
     formats.Configuration = decode_formats.Configuration;
+    supported_formats[0] = surface_format;
     formats.FormatCount = decode_formats.FormatCount;
     formats.pOutputFormats = supported_formats;
 
-    hr = pDec->m_pVideoDevice->CheckFeatureSupport(D3D12_FEATURE_VIDEO_DECODE_FORMATS, &formats, sizeof(formats));
+    hr = m_pVideoDevice->CheckFeatureSupport(D3D12_FEATURE_VIDEO_DECODE_FORMATS, &formats, sizeof(formats));
     if (FAILED(hr))
-    {
         return S_FALSE;
-    }
-    for (idx = 0; idx < 4; ++idx)
+
+    for (idx = 0; idx < formats.FormatCount; ++idx)
     {
-        BOOL is_supported = false;
-        for (size_t f = 0; f < decode_formats.FormatCount; f++)
+        if (supported_formats[idx] == DXGI_FORMAT_P010 || supported_formats[idx] == DXGI_FORMAT_NV12)
         {
-            if (supported_formats[f] == processorInput[idx]->formatTexture)
+            D3D12_FEATURE_DATA_VIDEO_DECODE_SUPPORT decode_support = { 0 };
+            decode_support.Configuration.DecodeProfile = decode_formats.Configuration.DecodeProfile;
+            decode_support.Configuration.BitstreamEncryption = D3D12_BITSTREAM_ENCRYPTION_TYPE_NONE;
+            decode_support.Configuration.InterlaceType = D3D12_VIDEO_FRAME_CODED_INTERLACE_TYPE_NONE;
+            decode_support.DecodeFormat = supported_formats[idx];
+            decode_support.Width = s->width;
+            decode_support.Height = s->height;
+            if (s->framerate.den && s->framerate.num)
             {
-                D3D12_FEATURE_DATA_VIDEO_DECODE_SUPPORT decode_support = { 0 };
-                decode_support.Configuration.DecodeProfile = decode_formats.Configuration.DecodeProfile;
-                decode_support.Configuration.BitstreamEncryption = D3D12_BITSTREAM_ENCRYPTION_TYPE_NONE;
-                decode_support.Configuration.InterlaceType = D3D12_VIDEO_FRAME_CODED_INTERLACE_TYPE_NONE;
-                decode_support.DecodeFormat = processorInput[idx]->formatTexture;
-                decode_support.Width = s->width;
-                decode_support.Height = s->height;
-                decode_support.FrameRate.Denominator = pDec->m_pAVCtx->framerate.den;
-                decode_support.FrameRate.Numerator = pDec->m_pAVCtx->framerate.num;
-                /*if (fmt->i_frame_rate && fmt->i_frame_rate_base)
-                {
-                    decode_support.FrameRate =
-                        (DXGI_RATIONAL){ .Numerator = fmt->i_frame_rate, .Denominator = fmt->i_frame_rate_base };
-                }*/
-                hr = pDec->m_pVideoDevice->CheckFeatureSupport(D3D12_FEATURE_VIDEO_DECODE_SUPPORT, &decode_support, sizeof(decode_support));
-
-                if (SUCCEEDED(hr))
-                {
-                    if (decode_support.SupportFlags & D3D12_VIDEO_DECODE_SUPPORT_FLAG_SUPPORTED)
-                    {
-
-                        if (processorInput[idx]->formatTexture == DXGI_FORMAT_NV12 || processorInput[idx]->formatTexture == DXGI_FORMAT_P010)
-                        {
-                            is_supported = true;
-                            pDec->render_fmt = processorInput[idx];
-                            break;
-                        }
-
-                    }
-
-                }
+                DXGI_RATIONAL framerate =  {  (UINT)s->framerate.den, (UINT)s->framerate.num};
+                decode_support.FrameRate = framerate;
             }
-            if (is_supported)
-                break;
+            hr = m_pVideoDevice->CheckFeatureSupport(D3D12_FEATURE_VIDEO_DECODE_SUPPORT, &decode_support, sizeof(decode_support));
+
+            if (decode_support.SupportFlags & D3D12_VIDEO_DECODE_SUPPORT_FLAG_SUPPORTED)
+            {
+                    m_SurfaceFormat = supported_formats[idx];
+                    break;
+
+            }
+
         }
     }
-    unsigned surface_idx;
-    pDec->m_SurfaceFormat = pDec->render_fmt->formatTexture;
+    
+
     CD3DX12_HEAP_PROPERTIES m_textureProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_CUSTOM, 1, 1);
-    CD3DX12_RESOURCE_DESC m_textureDesc = CD3DX12_RESOURCE_DESC(D3D12_RESOURCE_DIMENSION_TEXTURE2D, 0, s->width, s->height, 1/*pDec->GetBufferCount()*/, 1, pDec->m_SurfaceFormat, 1, 0, D3D12_TEXTURE_LAYOUT_UNKNOWN, D3D12_RESOURCE_FLAG_NONE);
+    CD3DX12_RESOURCE_DESC m_textureDesc = CD3DX12_RESOURCE_DESC(D3D12_RESOURCE_DIMENSION_TEXTURE2D, 0, s->width, s->height, 1/*GetBufferCount()*/, 1, m_SurfaceFormat, 1, 0, D3D12_TEXTURE_LAYOUT_UNKNOWN, D3D12_RESOURCE_FLAG_NONE);
     m_textureProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE;
     m_textureProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L1;
     //to do verify if device handle it
     m_textureDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS;
     
-    for (surface_idx = 0; surface_idx < pDec->GetBufferCount(); surface_idx++)
+    for (surface_idx = 0; surface_idx < GetBufferCount(); surface_idx++)
     {
-        hr = pDec->m_pD3DDevice->CreateCommittedResource(&m_textureProp, D3D12_HEAP_FLAG_NONE,
+        hr = m_pD3DDevice->CreateCommittedResource(&m_textureProp, D3D12_HEAP_FLAG_NONE,
             &m_textureDesc, D3D12_RESOURCE_STATE_VIDEO_DECODE_READ, NULL,
-            IID_ID3D12Resource, (void**)&pDec->m_pTexture[surface_idx]);
+            IID_ID3D12Resource, (void**)&m_pTexture[surface_idx]);
         if (FAILED(hr))
             assert(0);
     }
     
 
-    pDec->m_pD3D12VAContext.surfaces.NumTexture2Ds = pDec->GetBufferCount();
-    pDec->m_pD3D12VAContext.surfaces.ppTexture2Ds = pDec->ref_table;
-    pDec->m_pD3D12VAContext.surfaces.pSubresources = pDec->ref_index;
-    pDec->m_pD3D12VAContext.surfaces.ppHeaps = NULL;
-    for (surface_idx = 0; surface_idx < pDec->GetBufferCount(); surface_idx++) {
-        pDec->ref_table[surface_idx] = pDec->m_pTexture[surface_idx];
-        pDec->ref_index[surface_idx] = 0;// surface_idx;
+    m_pD3D12VAContext.surfaces.NumTexture2Ds = GetBufferCount();
+    m_pD3D12VAContext.surfaces.ppTexture2Ds = ref_table;
+    m_pD3D12VAContext.surfaces.pSubresources = ref_index;
+    m_pD3D12VAContext.surfaces.ppHeaps = NULL;
+    for (surface_idx = 0; surface_idx < GetBufferCount(); surface_idx++) {
+        ref_table[surface_idx] = m_pTexture[surface_idx];
+        ref_index[surface_idx] = 0;// surface_idx;
     }
     decoderDesc.Configuration.DecodeProfile = decode_formats.Configuration.DecodeProfile;;
     decoderDesc.NodeMask = 0;
@@ -614,24 +643,24 @@ STDMETHODIMP CDecD3D12::ReInitD3D12Decoder(AVCodecContext* s)
 
     ID3D12VideoDecoder* decoder;
 
-    hr = pDec->m_pVideoDevice->CreateVideoDecoder(&decoderDesc, IID_ID3D12VideoDecoder, (void**)&decoder);
-    pDec->m_pVideoDecoder = decoder;
-    pDec->m_pD3D12VAContext.workaround = 0;// FF_DXVA2_WORKAROUND_HEVC_REXT;
-    pDec->m_pD3D12VAContext.report_id = 0;
-    pDec->m_pD3D12VAContext.decoder = decoder;
-    pDec->m_pVideoDecoderCfg.NodeMask = 0;
-    pDec->m_pVideoDecoderCfg.Configuration = decoderDesc.Configuration;
-    pDec->m_pVideoDecoderCfg.DecodeWidth = s->width;
-    pDec->m_pVideoDecoderCfg.DecodeHeight = s->height;
-    pDec->m_pVideoDecoderCfg.Format = pDec->m_SurfaceFormat;
-    pDec->m_pVideoDecoderCfg.MaxDecodePictureBufferCount = pDec->GetBufferCount();
-    pDec->m_pD3D12VAContext.cfg = &pDec->m_pVideoDecoderCfg;
-    pDec->m_pVideoDecoderCfg.FrameRate.Denominator = pDec->m_pAVCtx->framerate.den;
-    pDec->m_pVideoDecoderCfg.FrameRate.Numerator = pDec->m_pAVCtx->framerate.num;
-    pDec->m_pAVCtx->hwaccel_context = &pDec->m_pD3D12VAContext;
+    hr = m_pVideoDevice->CreateVideoDecoder(&decoderDesc, IID_ID3D12VideoDecoder, (void**)&decoder);
+    m_pVideoDecoder = decoder;
+    m_pD3D12VAContext.workaround = 0;// FF_DXVA2_WORKAROUND_HEVC_REXT;
+    m_pD3D12VAContext.report_id = 0;
+    m_pD3D12VAContext.decoder = decoder;
+    m_pVideoDecoderCfg.NodeMask = 0;
+    m_pVideoDecoderCfg.Configuration = decoderDesc.Configuration;
+    m_pVideoDecoderCfg.DecodeWidth = s->width;
+    m_pVideoDecoderCfg.DecodeHeight = s->height;
+    m_pVideoDecoderCfg.Format = m_SurfaceFormat;
+    m_pVideoDecoderCfg.MaxDecodePictureBufferCount = GetBufferCount();
+    m_pD3D12VAContext.cfg = &m_pVideoDecoderCfg;
+    m_pVideoDecoderCfg.FrameRate.Denominator = m_pAVCtx->framerate.den;
+    m_pVideoDecoderCfg.FrameRate.Numerator = m_pAVCtx->framerate.num;
+    m_pAVCtx->hwaccel_context = &m_pD3D12VAContext;
     ref_free_index.clear();
     ref_free_index.resize(0);
-    for (int i = 0; i < pDec->GetBufferCount(); i++)
+    for (int i = 0; i < GetBufferCount(); i++)
         ref_free_index.push_back(i);
     return S_OK;
 }
