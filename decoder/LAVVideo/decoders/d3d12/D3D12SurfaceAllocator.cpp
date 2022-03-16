@@ -33,7 +33,7 @@ CD3D12MediaSample::CD3D12MediaSample(CD3D12SurfaceAllocator *pAllocator, AVFrame
     ASSERT(m_pFrame && m_pFrame->format == AV_PIX_FMT_D3D12_VLD);
     pAllocator->AddRef();
 
-    m_pAllocatorCookie = pAllocator->m_pFramesCtx;
+    //m_pAllocatorCookie = pAllocator->m_pFramesCtx;
 }
 
 CD3D12MediaSample::~CD3D12MediaSample()
@@ -50,9 +50,9 @@ STDMETHODIMP CD3D12MediaSample::QueryInterface(REFIID riid, __deref_out void **p
     CheckPointer(ppv, E_POINTER);
     ValidateReadWritePtr(ppv, sizeof(PVOID));
 
-    if (riid == __uuidof(IMediaSampleD3D11))
+    if (riid == __uuidof(IMediaSampleD3D12))
     {
-        return GetInterface((IMediaSampleD3D11 *)this, ppv);
+        return GetInterface((IMediaSampleD3D12 *)this, ppv);
     }
     else
     {
@@ -72,31 +72,23 @@ STDMETHODIMP_(ULONG) CD3D12MediaSample::Release()
     return cRef;
 }
 
-STDMETHODIMP CD3D12MediaSample::GetD3D12Texture(ID3D12Resource** ppTexture[4], unsigned* resource_plane[4], unsigned* slice_index, unsigned* array_size)
+STDMETHODIMP CD3D12MediaSample::GetD3D12Texture(ID3D12Resource **ppResource)
 {
-    CheckPointer(ppTexture, E_POINTER);
-#if 0
+    //CheckPointer(ppTexture, E_POINTER);
 
+
+    
     if (m_pFrame)
     {
-        *ppTexture = (ID3D12Resource*)m_pFrame->data[0];
-        for (int i = 0; i < DXGI_MAX_SHADER_VIEW; i++)
-        {
-            if (!resourceFormat[i])
-                pic_ctx->ctx.picsys.resource[i] = NULL;
-            else
-            {
-                pic_ctx->ctx.picsys.resource[i] = p_resource;
-                pic_ctx->ctx.picsys.resource_plane[i] = resourceFormat[i] == DXGI_FORMAT_R8G8_UNORM ? 1 : i;
-            }
-        }
-        *slice_index = (UINT)(intptr_t)m_pFrame->data[1];
+        
+        *ppResource = (ID3D12Resource*)m_pFrame->data[2];
+        //*pArraySlice = (UINT)(intptr_t)m_pFrame->data[1];
 
-        (*ppTexture)->AddRef();
+        (*ppResource)->AddRef();
 
         return S_OK;
     }
-#endif
+
     return E_FAIL;
 }
 
@@ -124,6 +116,7 @@ STDMETHODIMP CD3D12MediaSample::GetAVFrameBuffer(AVFrame *pFrame)
         {
             // and add a ref to this sample
             pFrame->buf[i] = av_buffer_create((uint8_t *)this, 1, bufref_release_sample, this, 0);
+            
             if (pFrame->buf[i] == 0)
                 return E_OUTOFMEMORY;
 
@@ -137,8 +130,9 @@ STDMETHODIMP CD3D12MediaSample::GetAVFrameBuffer(AVFrame *pFrame)
 
     // copy data into the new frame
     pFrame->data[0] = m_pFrame->data[0];
-    pFrame->data[1] = m_pFrame->data[1];
-    pFrame->data[3] = (uint8_t *)this;
+    pFrame->data[1] = (uint8_t*)this;
+    pFrame->data[2] = m_pFrame->data[2];
+    pFrame->data[3] = m_pFrame->data[3];
 
     pFrame->format = AV_PIX_FMT_D3D12_VLD;
 
@@ -157,7 +151,7 @@ CD3D12SurfaceAllocator::~CD3D12SurfaceAllocator()
 
 HRESULT CD3D12SurfaceAllocator::Alloc(void)
 {
-#if 0
+
     DbgLog((LOG_TRACE, 10, L"CD3D12SurfaceAllocator::Alloc()"));
     HRESULT hr = S_OK;
 
@@ -173,21 +167,15 @@ HRESULT CD3D12SurfaceAllocator::Alloc(void)
     // free old resources
     // m_pDec->FlushFromAllocator();
     Free();
-
-    // get the frames context from the decoder
-    AVBufferRef* pDecoderFramesCtx;// = m_pDec->m_pFramesCtx;
-    if (pDecoderFramesCtx == nullptr)
-        return S_FALSE;
-
-    m_pFramesCtx = av_buffer_ref(pDecoderFramesCtx);
-    if (m_pFramesCtx == nullptr)
-        return E_FAIL;
-
+    
+    long maxindex = m_pDec->GetBufferCount();
     // create samples
+    //this might ref some frame twice
     for (int i = 0; i < m_lCount; i++)
     {
         AVFrame *pFrame = av_frame_alloc();
-        int ret = av_hwframe_get_buffer(m_pFramesCtx, pFrame, 0);
+        pFrame->format = AV_PIX_FMT_D3D12_VLD;
+        int ret = 0;// av_hwframe_get_buffer(m_pFramesCtx, pFrame, 0);
         if (ret < 0)
         {
             av_frame_free(&pFrame);
@@ -195,6 +183,7 @@ HRESULT CD3D12SurfaceAllocator::Alloc(void)
             return E_FAIL;
         }
 
+        pFrame->data[3] = (uint8_t*)i;// index in the array
         CD3D12MediaSample *pSample = new CD3D12MediaSample(this, pFrame, &hr);
         if (pSample == nullptr || FAILED(hr))
         {
@@ -208,7 +197,7 @@ HRESULT CD3D12SurfaceAllocator::Alloc(void)
 
     m_lAllocated = m_lCount;
     m_bChanged = FALSE;
-#endif
+
     return S_OK;
 }
 
@@ -227,14 +216,15 @@ void CD3D12SurfaceAllocator::Free(void)
     } while (pSample);
 
     m_lAllocated = 0;
-    av_buffer_unref(&m_pFramesCtx);
+    //av_buffer_unref(&m_pFramesCtx);
 }
 
 STDMETHODIMP CD3D12SurfaceAllocator::ReleaseBuffer(IMediaSample *pSample)
 {
     CD3D12MediaSample *pD3D11Sample = dynamic_cast<CD3D12MediaSample *>(pSample);
-    if (pD3D11Sample && pD3D11Sample->m_pAllocatorCookie != m_pFramesCtx)
+    if (0)//need to look how to do it pD3D11Sample) && pD3D11Sample->m_pAllocatorCookie != m_pFramesCtx)
     {
+        
         DbgLog((LOG_TRACE, 10, L"CD3D12SurfaceAllocator::ReleaseBuffer: Freeing late sample"));
         delete pD3D11Sample;
         return S_OK;

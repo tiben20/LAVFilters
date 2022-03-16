@@ -587,7 +587,13 @@ HRESULT CLAVVideo::DecideBufferSize(IMemAllocator *pAllocator, ALLOCATOR_PROPERT
     long decoderBuffersMax = LONG_MAX;
     long decoderBuffs = m_Decoder.GetBufferCount(&decoderBuffersMax);
     long downstreamBuffers = pProperties->cBuffers;
-    pProperties->cBuffers = min(max(pProperties->cBuffers, 2) + decoderBuffs, decoderBuffersMax);
+    LAVPixelFormat fmt;
+    m_Decoder.GetPixelFormat(&fmt, nullptr);
+    //dont allocate more than we decode
+    if (fmt == LAVPixFmt_D3D12)
+        pProperties->cBuffers = decoderBuffs;
+    else
+        pProperties->cBuffers = min(max(pProperties->cBuffers, 2) + decoderBuffs, decoderBuffersMax);
     pProperties->cbBuffer = pBIH ? pBIH->biSizeImage : 3110400;
     pProperties->cbAlign = 1;
     pProperties->cbPrefix = 0;

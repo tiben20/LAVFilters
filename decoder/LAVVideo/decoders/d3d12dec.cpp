@@ -132,6 +132,9 @@ CDecD3D12::CDecD3D12(void)
 CDecD3D12::~CDecD3D12(void)
 {
     DestroyDecoder(true);
+    if (m_pAllocator)
+        m_pAllocator->DecoderDestruct();
+    SafeRelease(&m_pAllocator);
     DeleteCriticalSection(&directLock);
 }
 
@@ -214,7 +217,25 @@ STDMETHODIMP CDecD3D12::InitAllocator(IMemAllocator **ppAlloc)
     if (m_bReadBackFallback)
         return E_NOTIMPL;
 
-    return E_NOTIMPL;
+    if (m_pAllocator == nullptr)
+    {
+        m_pAllocator = new CD3D12SurfaceAllocator(this, &hr);
+        if (!m_pAllocator)
+        {
+            return E_OUTOFMEMORY;
+        }
+        if (FAILED(hr))
+        {
+            SAFE_DELETE(m_pAllocator);
+            return hr;
+        }
+
+        // Hold a reference on the allocator
+        m_pAllocator->AddRef();
+    }
+
+    // return the proper interface
+    return m_pAllocator->QueryInterface(__uuidof(IMemAllocator), (void**)ppAlloc);
 }
 
 STDMETHODIMP CDecD3D12::CreateD3D12Device(UINT nDeviceIndex)
@@ -292,18 +313,72 @@ STDMETHODIMP CDecD3D12::PostConnect(IPin *pPin)
 
     DbgLog((LOG_TRACE, 10, L"CDecD3D12::PostConnect()"));
     HRESULT hr = S_OK;
+    ID3D12DecoderConfiguration* pD3D12DecoderConfiguration = nullptr;
+    hr = pPin->QueryInterface(&pD3D12DecoderConfiguration);
+    if (FAILED(hr))
+    {
+        DbgLog((LOG_ERROR, 10, L"-> ID3D11DecoderConfiguration not available, using fallback mode"));
+    }
     m_pCallback->ReleaseAllDXVAResources();
 
-    
-    //UINT nDevice = LAVHWACCEL_DEVICE_DEFAULT;
     UINT nDevice = m_pSettings->GetHWAccelDeviceIndex(HWAccel_D3D12, nullptr);
+    // in automatic mode use the device the renderer gives us
+    if (nDevice == LAVHWACCEL_DEVICE_DEFAULT && pD3D12DecoderConfiguration)
+    {
+        nDevice = pD3D12DecoderConfiguration->GetD3D12AdapterIndex();
+    }
+    else
+    {
+        // if a device is specified manually, fallback to copy-back and use the selected device
+        SafeRelease(&pD3D12DecoderConfiguration);
+
+        // use the configured device
+        if (nDevice == LAVHWACCEL_DEVICE_DEFAULT)
+            nDevice = 0;
+    }
+    //UINT nDevice = LAVHWACCEL_DEVICE_DEFAULT;
+    
     if (!m_pD3DDevice)
     {
         hr = CreateD3D12Device(nDevice);
     }
 
+    // enable multithreaded protection
+    //not in d3d12 ?
+    ID3D10Multithread* pMultithread = nullptr;
+    hr = m_pD3DDevice->QueryInterface(&pMultithread);
+    if (SUCCEEDED(hr))
+    {
+        pMultithread->SetMultithreadProtected(TRUE);
+        SafeRelease(&pMultithread);
+    }
 
-    m_bReadBackFallback = true;
+    // check if the connection supports native mode
+    if (pD3D12DecoderConfiguration)
+    {
+        CMediaType mt = m_pCallback->GetOutputMediaType();
+        if ((m_SurfaceFormat == DXGI_FORMAT_NV12 && mt.subtype != MEDIASUBTYPE_NV12) ||
+            (m_SurfaceFormat == DXGI_FORMAT_P010 && mt.subtype != MEDIASUBTYPE_P010) ||
+            (m_SurfaceFormat == DXGI_FORMAT_P016 && mt.subtype != MEDIASUBTYPE_P016))
+        {
+            DbgLog((LOG_ERROR, 10, L"-> Connection is not the appropriate pixel format for D3D11 Native"));
+
+            SafeRelease(&pD3D12DecoderConfiguration);
+        }
+    }
+
+    // Notice the connected pin that we're sending D3D11 textures
+    if (pD3D12DecoderConfiguration)
+    {
+        hr = pD3D12DecoderConfiguration->ActivateD3D12Decoding(m_pD3DDevice, (HANDLE)0/*directLock*/, 0);
+        SafeRelease(&pD3D12DecoderConfiguration);
+
+        m_bReadBackFallback = FAILED(hr);
+    }
+    else
+    {
+        m_bReadBackFallback = true;
+    }
     return S_OK;
 fail:
     return E_FAIL;
@@ -453,39 +528,45 @@ int CDecD3D12::get_d3d12_buffer(struct AVCodecContext *c, AVFrame *frame, int fl
     CDecD3D12 *pDec = (CDecD3D12 *)c->opaque;
 
     frame->opaque = NULL;
-    
+    HRESULT hr = S_OK;
     
     UINT freeindex=-1;
-    /*if (pDec->ref_free_index.size() == 0)
-    {
-        //reset the index
-        pDec->ref_free_index.clear();
-        pDec->ref_free_index.resize(0);
-        for (int i = 0; i < pDec->GetBufferCount(); i++)
-            pDec->ref_free_index.push_back(i);
-    }*/
-    if (pDec->ref_free_index.size()==0)
-        return E_OUTOFMEMORY;
-
-    frame->buf[0] = av_buffer_create(frame->data[0], 0, ReleaseFrame12, nullptr, 0);
-    frame->data[0] = (uint8_t*)pDec->m_pD3D12VAContext.surfaces.NumTexture2Ds;//array size
-    frame->data[3] = (uint8_t*)pDec->ref_free_index.front();//output index of the frame
-
-    //pDec->ref_free_index.front() = std::move(pDec->ref_free_index.back());
-    pDec->ref_free_index.pop_front();
     
-    //frame->opaque = this;
-    return 0;
-    //&pDec->m_pTexture;
-    
-    /*if (pDec->m_pFramesCtx)
+    if (pDec->m_bReadBackFallback)
     {
-        int ret = av_hwframe_get_buffer(pDec->m_pFramesCtx, frame, 0);
-        frame->data[2] = (uint8_t *) 8;
+        if (pDec->ref_free_index.size() == 0)
+            return E_OUTOFMEMORY;
+        frame->buf[0] = av_buffer_create(frame->data[0], 0, ReleaseFrame12, nullptr, 0);
+        frame->data[0] = (uint8_t*)pDec->m_pD3D12VAContext.surfaces.NumTexture2Ds;//array size
+        frame->data[3] = (uint8_t*)pDec->ref_free_index.front();//output index of the frame
+        pDec->ref_free_index.pop_front();
         frame->width = c->coded_width;
         frame->height = c->coded_height;
-        return ret;
-    }*/
+        return 0;
+    }
+    else if (pDec->m_bReadBackFallback == false && pDec->m_pAllocator)
+    {
+        IMediaSample* pSample = nullptr;
+        hr = pDec->m_pAllocator->GetBuffer(&pSample, nullptr, nullptr, 0);
+        if (SUCCEEDED(hr))
+        {
+            CD3D12MediaSample* pD3D12Sample = dynamic_cast<CD3D12MediaSample*>(pSample);
+
+            // fill the frame from the sample, including a reference to the sample
+            pD3D12Sample->GetAVFrameBuffer(frame);
+            
+            frame->width = c->coded_width;
+            frame->height = c->coded_height;
+            frame->data[0] = (uint8_t*) "go";
+            
+            int frameindex = (int)frame->data[3];
+                
+            // the frame holds the sample now, can release the direct interface
+            pD3D12Sample->Release();
+            return 0;
+        }
+
+    }
     
     return 0;
 }
@@ -812,8 +893,14 @@ HRESULT CDecD3D12::DeliverD3D12Frame(LAVFrame *pFrame)
     else
     {
         AVFrame* pAVFrame = (AVFrame*)pFrame->priv_data;
-        pFrame->data[0] = pAVFrame->data[3];
-        pFrame->data[1] = pFrame->data[2] = pFrame->data[3] = nullptr;
+        int textureindex = (int)pAVFrame->data[3];
+        CD3D12MediaSample* pD3D12Sample = (CD3D12MediaSample*)(pAVFrame->data[1]);
+        pD3D12Sample->SetD3D12Texture(m_pTexture[textureindex]);
+        pFrame->data[0] = pAVFrame->data[1];
+        
+        //pFrame->data[1] = pFrame->data[2] = nullptr;
+        pFrame->data[1] = nullptr;
+        //need to keep data[3] its the index of the surface used
 
         GetPixelFormat(&pFrame->format, &pFrame->bpp);
 
