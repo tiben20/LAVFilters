@@ -45,7 +45,7 @@ class CD3D12MediaSample
     STDMETHODIMP GetPointer(BYTE **ppBuffer) { return E_NOTIMPL; }
 
     // IMediaSampleD3D12
-    HRESULT STDMETHODCALLTYPE GetD3D12Texture(ID3D12Resource** ppTexture);
+    HRESULT STDMETHODCALLTYPE GetD3D12Texture(ID3D12Resource** ppTexture, int* iTextureIndex);
 
     // LAV Interface
     STDMETHODIMP GetAVFrameBuffer(AVFrame *pFrame);
@@ -63,6 +63,8 @@ class CD3D12SurfaceAllocator : public CBaseAllocator
   public:
     CD3D12SurfaceAllocator(CDecD3D12 *pDec, HRESULT *phr);
     virtual ~CD3D12SurfaceAllocator();
+
+    STDMETHODIMP GetBuffer(IMediaSample **pSample);
 
     STDMETHODIMP ReleaseBuffer(IMediaSample *pSample);
 

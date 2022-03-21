@@ -547,7 +547,7 @@ int CDecD3D12::get_d3d12_buffer(struct AVCodecContext *c, AVFrame *frame, int fl
     else if (pDec->m_bReadBackFallback == false && pDec->m_pAllocator)
     {
         IMediaSample* pSample = nullptr;
-        hr = pDec->m_pAllocator->GetBuffer(&pSample, nullptr, nullptr, 0);
+        hr = pDec->m_pAllocator->GetBuffer(&pSample);
         if (SUCCEEDED(hr))
         {
             CD3D12MediaSample* pD3D12Sample = dynamic_cast<CD3D12MediaSample*>(pSample);

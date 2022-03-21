@@ -72,7 +72,7 @@ STDMETHODIMP_(ULONG) CD3D12MediaSample::Release()
     return cRef;
 }
 
-STDMETHODIMP CD3D12MediaSample::GetD3D12Texture(ID3D12Resource **ppResource)
+STDMETHODIMP CD3D12MediaSample::GetD3D12Texture(ID3D12Resource **ppResource, int* iTextureIndex)
 {
     //CheckPointer(ppTexture, E_POINTER);
 
@@ -82,6 +82,7 @@ STDMETHODIMP CD3D12MediaSample::GetD3D12Texture(ID3D12Resource **ppResource)
     {
         
         *ppResource = (ID3D12Resource*)m_pFrame->data[2];
+        *iTextureIndex =(int) m_pFrame->data[3];
         //*pArraySlice = (UINT)(intptr_t)m_pFrame->data[1];
 
         (*ppResource)->AddRef();
@@ -97,6 +98,8 @@ static void bufref_release_sample(void *opaque, uint8_t *data)
     CD3D12MediaSample *pSample = (CD3D12MediaSample *)opaque;
     pSample->Release();
 }
+
+
 
 STDMETHODIMP CD3D12MediaSample::GetAVFrameBuffer(AVFrame *pFrame)
 {
@@ -147,6 +150,57 @@ CD3D12SurfaceAllocator::CD3D12SurfaceAllocator(CDecD3D12 *pDec, HRESULT *phr)
 
 CD3D12SurfaceAllocator::~CD3D12SurfaceAllocator()
 {
+}
+
+STDMETHODIMP CD3D12SurfaceAllocator::GetBuffer(IMediaSample **ppBuffer)
+{
+    
+    CMediaSample* pSample;
+
+    *ppBuffer = NULL;
+    for (;;)
+    {
+        { // scope for lock
+            CAutoLock cObjectLock(this);
+
+            /* Check we are committed */
+            if (!m_bCommitted)
+            {
+                return VFW_E_NOT_COMMITTED;
+            }
+            
+            pSample = (CMediaSample*)m_lFree.RemoveHead();
+            
+            if (pSample == NULL)
+            {
+                SetWaiting();
+            }
+        }
+
+        /* If we didn't get a sample then wait for the list to signal */
+
+        if (pSample)
+        {
+            break;
+        }
+        ASSERT(m_hSem != NULL);
+        WaitForSingleObject(m_hSem, INFINITE);
+    }
+
+    /* Addref the buffer up to one. On release
+       back to zero instead of being deleted, it will requeue itself by
+       calling the ReleaseBuffer member function. NOTE the owner of a
+       media sample must always be derived from CBaseAllocator */
+
+    ASSERT(pSample->m_cRef == 0);
+    pSample->m_cRef = 1;
+    *ppBuffer = pSample;
+
+#ifdef DXMPERF
+    PERFLOG_GETBUFFER((IMemAllocator*)this, pSample);
+#endif // DXMPERF
+
+    return NOERROR;
 }
 
 HRESULT CD3D12SurfaceAllocator::Alloc(void)
