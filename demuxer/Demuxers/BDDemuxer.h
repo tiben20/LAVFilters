@@ -125,7 +125,7 @@ class CBDDemuxer
 
     void ProcessBluRayMetadata();
     STDMETHODIMP ProcessPacket(Packet *pPacket);
-    STDMETHODIMP FillMVCExtensionQueue(REFERENCE_TIME rtBase, int buffsize);
+    STDMETHODIMP FillMVCExtensionQueue(REFERENCE_TIME rtBase);
 
   private:
     void ProcessClipInfo(struct clpi_cl *clpi, bool overwrite);
