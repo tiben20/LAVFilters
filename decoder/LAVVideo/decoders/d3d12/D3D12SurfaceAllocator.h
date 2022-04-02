@@ -23,6 +23,7 @@
 
 #include "MediaSampleSideData.h"
 #include "ID3DVideoMemoryConfiguration.h"
+#include <queue>
 
 class CDecD3D12;
 
@@ -53,16 +54,78 @@ class CD3D12MediaSample
     {
         m_pFrame->data[2] = (uint8_t*)tex;
     }
+
+    int GetTextureIndex()
+    {
+        return (int)m_pFrame->data[3];
+    }
   private:
     AVFrame *m_pFrame = nullptr;
-    void *m_pAllocatorCookie = nullptr;
 };
 
 class CD3D12SurfaceAllocator : public CBaseAllocator
 {
+    friend class CD3D12SampleList;
+
+    class CD3D12SampleList
+    {
+    public:
+        CD3D12SampleList()
+        {
+        };
+        ~CD3D12SampleList() {};
+
+        void Add(CD3D12MediaSample* pSample)
+        {
+            ASSERT(pSample != NULL);
+            m_pFreeList.push(pSample);
+        }
+        int GetCount()
+        {
+            return m_pFreeList.size();
+        }
+
+        CD3D12MediaSample* RemoveHead()
+        {
+            if (m_pFreeList.size() == 0)
+                return nullptr;
+            CD3D12MediaSample* sample = m_pFreeList.front();
+            m_pFreeList.pop();
+            return sample;
+        }
+
+        CD3D12MediaSample* GetFreeSample()
+        {
+            if (m_pFreeList.size() == 0)
+                assert(0);
+            CD3D12MediaSample* freesample = m_pFreeList.front();
+            m_pFreeList.pop();
+            return freesample;
+        }
+
+    protected:
+    private:
+        std::queue<CD3D12MediaSample*> m_pFreeList;
+        std::string m_presentedindex;
+        //std::vector<CMediaSample*> m_pUsedList;
+
+    };
+
   public:
     CD3D12SurfaceAllocator(CDecD3D12 *pDec, HRESULT *phr);
     virtual ~CD3D12SurfaceAllocator();
+
+    STDMETHODIMP SetProperties(__in ALLOCATOR_PROPERTIES* pRequest, __out ALLOCATOR_PROPERTIES* pActual);
+    
+    STDMETHODIMP GetProperties(__out ALLOCATOR_PROPERTIES* pProps);
+
+    STDMETHODIMP Commit();
+
+    STDMETHODIMP Decommit();
+
+    STDMETHODIMP GetBuffer(__deref_out IMediaSample** ppBuffer, __in_opt REFERENCE_TIME* pStartTime,
+        __in_opt REFERENCE_TIME* pEndTime, DWORD dwFlags);
+    
 
     STDMETHODIMP ReleaseBuffer(IMediaSample *pSample);
 
@@ -87,6 +150,7 @@ class CD3D12SurfaceAllocator : public CBaseAllocator
     }
 
   protected:
+      CD3D12SampleList m_pSampleList;
     virtual void Free(void);
     virtual HRESULT Alloc(void);
 
