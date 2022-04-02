@@ -531,12 +531,22 @@ int CDecD3D12::get_d3d12_buffer(struct AVCodecContext *c, AVFrame *frame, int fl
     HRESULT hr = S_OK;
     
     UINT freeindex=-1;
+
+    hr = pDec->ReInitD3D12Decoder(c);
+
+    if (FAILED(hr))
+    {
+        pDec->m_bFailHWDecode = TRUE;
+        return -1;
+    }
     
     if (pDec->m_bReadBackFallback)
     {
         if (pDec->ref_free_index.size() == 0)
             return E_OUTOFMEMORY;
         frame->buf[0] = av_buffer_create(frame->data[0], 0, ReleaseFrame12, nullptr, 0);
+        if (!frame->buf[0])
+            assert(0);
         frame->data[0] = (uint8_t*)pDec->m_pD3D12VAContext.surfaces.NumTexture2Ds;//array size
         frame->data[3] = (uint8_t*)pDec->ref_free_index.front();//output index of the frame
         pDec->ref_free_index.pop_front();
@@ -546,8 +556,9 @@ int CDecD3D12::get_d3d12_buffer(struct AVCodecContext *c, AVFrame *frame, int fl
     }
     else if (pDec->m_bReadBackFallback == false && pDec->m_pAllocator)
     {
+        
         IMediaSample* pSample = nullptr;
-        hr = pDec->m_pAllocator->GetBuffer(&pSample);
+        hr = pDec->m_pAllocator->GetBuffer(& pSample, nullptr, nullptr, 0);
         if (SUCCEEDED(hr))
         {
             CD3D12MediaSample* pD3D12Sample = dynamic_cast<CD3D12MediaSample*>(pSample);
@@ -568,7 +579,7 @@ int CDecD3D12::get_d3d12_buffer(struct AVCodecContext *c, AVFrame *frame, int fl
 
     }
     
-    return 0;
+    return -1;
 }
 
 
@@ -586,7 +597,7 @@ STDMETHODIMP CDecD3D12::FillHWContext(AVD3D12VAContext *ctx)
 STDMETHODIMP_(long) CDecD3D12::GetBufferCount(long *pMaxBuffers)
 {
     long buffers = 0;
-
+    buffers = 16;
     // Native decoding should use 16 buffers to enable seamless codec changes
     if (!m_bReadBackFallback)
         buffers = 16;
@@ -656,6 +667,7 @@ STDMETHODIMP CDecD3D12::FlushDisplayQueue(BOOL bDeliver)
 
 STDMETHODIMP CDecD3D12::Flush()
 {
+    DbgLog((LOG_TRACE, 10, L"CDecD3D12::Flush"));
     ref_free_index.clear();
     ref_free_index.resize(0);
     for (int i = 0; i < GetBufferCount(); i++)
@@ -750,93 +762,105 @@ STDMETHODIMP CDecD3D12::ReInitD3D12Decoder(AVCodecContext* s)
     if (m_bInInit)
         return S_FALSE;
 
-    
+    // we need an allocator at this point
+    if (m_bReadBackFallback == false && m_pAllocator == nullptr)
+        return E_FAIL;
+
     DXGI_FORMAT surface_format;
     switch (m_pAVCtx->sw_pix_fmt)
     {
-        case AV_PIX_FMT_YUV420P10LE:
-        case AV_PIX_FMT_P010:
-            surface_format = DXGI_FORMAT_P010;
-            break;
-        case AV_PIX_FMT_NV12:
-        default: surface_format = DXGI_FORMAT_NV12;
+    case AV_PIX_FMT_YUV420P10LE:
+    case AV_PIX_FMT_P010:
+        surface_format = DXGI_FORMAT_P010;
+        break;
+    case AV_PIX_FMT_NV12:
+    default: surface_format = DXGI_FORMAT_NV12;
     }
-    D3D12_VIDEO_DECODER_DESC decoderDesc;
-    D3D12_FEATURE_DATA_VIDEO_DECODE_SUPPORT formats;
-    CD3D12Format* fmt = new CD3D12Format(m_pVideoDevice);
-    GUID profileGUID = GUID_NULL;
-    hr = fmt->FindVideoServiceConversion(s, surface_format, &profileGUID);
-    if (SUCCEEDED(hr))
-        formats = fmt->GetDecodeSupport();
-    
-    
-    int idx, surface_idx = 0;
-    const d3d_format_t* decoder_format;
-    int bitdepth = 8;
-    int chromah, chromaw;
-    //add checkup for those flags in cd3d12format
-    UINT supportFlags = D3D12_FORMAT_SUPPORT1_DECODER_OUTPUT | D3D12_FORMAT_SUPPORT1_SHADER_LOAD;
- 
-    
-    m_SurfaceFormat = fmt->GetSupportedFormat();
 
-    
-
-    CD3DX12_HEAP_PROPERTIES m_textureProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_CUSTOM, 1, 1);
-    CD3DX12_RESOURCE_DESC m_textureDesc = CD3DX12_RESOURCE_DESC(D3D12_RESOURCE_DIMENSION_TEXTURE2D, 0, s->width, s->height, 1, 1, m_SurfaceFormat, 1, 0, D3D12_TEXTURE_LAYOUT_UNKNOWN, D3D12_RESOURCE_FLAG_NONE);
-    m_textureProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE;
-    m_textureProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L1;
-    //to do verify if device handle it
-    m_textureDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS;
-    
-    for (surface_idx = 0; surface_idx < GetBufferCount(); surface_idx++)
+    if (m_pVideoDecoder == nullptr || m_dwSurfaceWidth != dxva_align_dimensions(s->codec_id, s->coded_width) ||
+        m_dwSurfaceHeight != dxva_align_dimensions(s->codec_id, s->coded_height) ||
+        m_SurfaceFormat != surface_format)
     {
-        hr = m_pD3DDevice->CreateCommittedResource(&m_textureProp, D3D12_HEAP_FLAG_NONE,
-            &m_textureDesc, D3D12_RESOURCE_STATE_VIDEO_DECODE_READ, NULL,
-            IID_ID3D12Resource, (void**)&m_pTexture[surface_idx]);
+
+        D3D12_VIDEO_DECODER_DESC decoderDesc;
+        D3D12_FEATURE_DATA_VIDEO_DECODE_SUPPORT formats;
+        CD3D12Format* fmt = new CD3D12Format(m_pVideoDevice);
+        GUID profileGUID = GUID_NULL;
+        hr = fmt->FindVideoServiceConversion(s, surface_format, &profileGUID);
+        if (SUCCEEDED(hr))
+            formats = fmt->GetDecodeSupport();
+
+        CreateD3D12Decoder();
+        int idx, surface_idx = 0;
+        const d3d_format_t* decoder_format;
+        int bitdepth = 8;
+        int chromah, chromaw;
+        //add checkup for those flags in cd3d12format
+        UINT supportFlags = D3D12_FORMAT_SUPPORT1_DECODER_OUTPUT | D3D12_FORMAT_SUPPORT1_SHADER_LOAD;
+
+
+        m_SurfaceFormat = fmt->GetSupportedFormat();
+
+
+
+        CD3DX12_HEAP_PROPERTIES m_textureProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_CUSTOM, 1, 1);
+        CD3DX12_RESOURCE_DESC m_textureDesc = CD3DX12_RESOURCE_DESC(D3D12_RESOURCE_DIMENSION_TEXTURE2D, 0, s->width, s->height, 1, 1, m_SurfaceFormat, 1, 0, D3D12_TEXTURE_LAYOUT_UNKNOWN, D3D12_RESOURCE_FLAG_NONE);
+        m_textureProp.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE;
+        m_textureProp.MemoryPoolPreference = D3D12_MEMORY_POOL_L1;
+        //to do verify if device handle it
+        m_textureDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS;
+
+        for (surface_idx = 0; surface_idx < GetBufferCount(); surface_idx++)
+        {
+            hr = m_pD3DDevice->CreateCommittedResource(&m_textureProp, D3D12_HEAP_FLAG_NONE,
+                &m_textureDesc, D3D12_RESOURCE_STATE_VIDEO_DECODE_READ, NULL,
+                IID_ID3D12Resource, (void**)&m_pTexture[surface_idx]);
+            if (FAILED(hr))
+                assert(0);
+        }
+
+
+        m_pD3D12VAContext.surfaces.NumTexture2Ds = GetBufferCount();
+        m_pD3D12VAContext.surfaces.ppTexture2Ds = ref_table;
+        m_pD3D12VAContext.surfaces.pSubresources = ref_index;
+        m_pD3D12VAContext.surfaces.ppHeaps = NULL;
+        for (surface_idx = 0; surface_idx < GetBufferCount(); surface_idx++) {
+            ref_table[surface_idx] = m_pTexture[surface_idx];
+            ref_index[surface_idx] = 0;// surface_idx;
+        }
+        decoderDesc.Configuration.DecodeProfile = formats.Configuration.DecodeProfile;
+        decoderDesc.NodeMask = 0;
+        decoderDesc.Configuration.InterlaceType = D3D12_VIDEO_FRAME_CODED_INTERLACE_TYPE_NONE;
+        decoderDesc.Configuration.BitstreamEncryption = D3D12_BITSTREAM_ENCRYPTION_TYPE_NONE;
+
+        ID3D12VideoDecoder* decoder;
+
+        hr = m_pVideoDevice->CreateVideoDecoder(&decoderDesc, IID_ID3D12VideoDecoder, (void**)&decoder);
         if (FAILED(hr))
             assert(0);
+        m_pVideoDecoder = decoder;
+        m_pD3D12VAContext.workaround = 0;// FF_DXVA2_WORKAROUND_HEVC_REXT;
+        m_pD3D12VAContext.report_id = 0;
+        m_pD3D12VAContext.decoder = decoder;
+        m_pVideoDecoderCfg.NodeMask = 0;
+        m_pVideoDecoderCfg.Configuration = decoderDesc.Configuration;
+        m_pVideoDecoderCfg.DecodeWidth = s->width;
+        m_pVideoDecoderCfg.DecodeHeight = s->height;
+        m_pVideoDecoderCfg.Format = m_SurfaceFormat;
+        m_pVideoDecoderCfg.MaxDecodePictureBufferCount = GetBufferCount();
+        m_pD3D12VAContext.cfg = &m_pVideoDecoderCfg;
+        m_pVideoDecoderCfg.FrameRate.Denominator = m_pAVCtx->framerate.den;
+        m_pVideoDecoderCfg.FrameRate.Numerator = m_pAVCtx->framerate.num;
+        m_pAVCtx->hwaccel_context = &m_pD3D12VAContext;
+        ref_free_index.clear();
+        ref_free_index.resize(0);
+        for (int i = 0; i < GetBufferCount(); i++)
+            ref_free_index.push_back(i);
+        fmt = nullptr;
+        
     }
-    
-
-    m_pD3D12VAContext.surfaces.NumTexture2Ds = GetBufferCount();
-    m_pD3D12VAContext.surfaces.ppTexture2Ds = ref_table;
-    m_pD3D12VAContext.surfaces.pSubresources = ref_index;
-    m_pD3D12VAContext.surfaces.ppHeaps = NULL;
-    for (surface_idx = 0; surface_idx < GetBufferCount(); surface_idx++) {
-        ref_table[surface_idx] = m_pTexture[surface_idx];
-        ref_index[surface_idx] = 0;// surface_idx;
-    }
-    decoderDesc.Configuration.DecodeProfile = formats.Configuration.DecodeProfile;
-    decoderDesc.NodeMask = 0;
-    decoderDesc.Configuration.InterlaceType = D3D12_VIDEO_FRAME_CODED_INTERLACE_TYPE_NONE;
-    decoderDesc.Configuration.BitstreamEncryption = D3D12_BITSTREAM_ENCRYPTION_TYPE_NONE;
-
-    ID3D12VideoDecoder* decoder;
-
-    hr = m_pVideoDevice->CreateVideoDecoder(&decoderDesc, IID_ID3D12VideoDecoder, (void**)&decoder);
-    if (FAILED(hr))
-        assert(0);
-    m_pVideoDecoder = decoder;
-    m_pD3D12VAContext.workaround = 0;// FF_DXVA2_WORKAROUND_HEVC_REXT;
-    m_pD3D12VAContext.report_id = 0;
-    m_pD3D12VAContext.decoder = decoder;
-    m_pVideoDecoderCfg.NodeMask = 0;
-    m_pVideoDecoderCfg.Configuration = decoderDesc.Configuration;
-    m_pVideoDecoderCfg.DecodeWidth = s->width;
-    m_pVideoDecoderCfg.DecodeHeight = s->height;
-    m_pVideoDecoderCfg.Format = m_SurfaceFormat;
-    m_pVideoDecoderCfg.MaxDecodePictureBufferCount = GetBufferCount();
-    m_pD3D12VAContext.cfg = &m_pVideoDecoderCfg;
-    m_pVideoDecoderCfg.FrameRate.Denominator = m_pAVCtx->framerate.den;
-    m_pVideoDecoderCfg.FrameRate.Numerator = m_pAVCtx->framerate.num;
-    m_pAVCtx->hwaccel_context = &m_pD3D12VAContext;
-    ref_free_index.clear();
-    ref_free_index.resize(0);
-    for (int i = 0; i < GetBufferCount(); i++)
-        ref_free_index.push_back(i);
-    fmt = nullptr;
     return S_OK;
+
 }
 
 STDMETHODIMP CDecD3D12::CreateD3D12Decoder()
@@ -848,6 +872,8 @@ STDMETHODIMP CDecD3D12::CreateD3D12Decoder()
     m_dwSurfaceHeight = dxva_align_dimensions(m_pAVCtx->codec_id, m_pAVCtx->coded_height);
     
     m_dwSurfaceCount = GetBufferCount();
+    
+    
     
     return E_FAIL;
 }
@@ -905,8 +931,13 @@ HRESULT CDecD3D12::DeliverD3D12Frame(LAVFrame *pFrame)
         GetPixelFormat(&pFrame->format, &pFrame->bpp);
 
         Deliver(pFrame);
+        //FILTER_STATE state;
+        //m_pCallback->GetOutputPin().m_pFilter->GetState(0, &state);
+        
+        if (m_pCallback->GetOutputPin()->IsStopped())
+            assert(0);
     }
-
+    
     return S_OK;
 }
 

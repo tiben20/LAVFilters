@@ -33,7 +33,7 @@ CD3D12MediaSample::CD3D12MediaSample(CD3D12SurfaceAllocator *pAllocator, AVFrame
     ASSERT(m_pFrame && m_pFrame->format == AV_PIX_FMT_D3D12_VLD);
     pAllocator->AddRef();
 
-    //m_pAllocatorCookie = pAllocator->m_pFramesCtx;
+    
 }
 
 CD3D12MediaSample::~CD3D12MediaSample()
@@ -127,8 +127,8 @@ STDMETHODIMP CD3D12MediaSample::GetAVFrameBuffer(AVFrame *pFrame)
             break;
         }
     }
-
     // ref the hwframes ctx
+    //maybe we will need to remove this
     //pFrame->hw_frames_ctx = av_buffer_ref(m_pFrame->hw_frames_ctx);
 
     // copy data into the new frame
@@ -152,57 +152,6 @@ CD3D12SurfaceAllocator::~CD3D12SurfaceAllocator()
 {
 }
 
-STDMETHODIMP CD3D12SurfaceAllocator::GetBuffer(IMediaSample **ppBuffer)
-{
-    
-    CMediaSample* pSample;
-
-    *ppBuffer = NULL;
-    for (;;)
-    {
-        { // scope for lock
-            CAutoLock cObjectLock(this);
-
-            /* Check we are committed */
-            if (!m_bCommitted)
-            {
-                return VFW_E_NOT_COMMITTED;
-            }
-            
-            pSample = (CMediaSample*)m_lFree.RemoveHead();
-            
-            if (pSample == NULL)
-            {
-                SetWaiting();
-            }
-        }
-
-        /* If we didn't get a sample then wait for the list to signal */
-
-        if (pSample)
-        {
-            break;
-        }
-        ASSERT(m_hSem != NULL);
-        WaitForSingleObject(m_hSem, INFINITE);
-    }
-
-    /* Addref the buffer up to one. On release
-       back to zero instead of being deleted, it will requeue itself by
-       calling the ReleaseBuffer member function. NOTE the owner of a
-       media sample must always be derived from CBaseAllocator */
-
-    ASSERT(pSample->m_cRef == 0);
-    pSample->m_cRef = 1;
-    *ppBuffer = pSample;
-
-#ifdef DXMPERF
-    PERFLOG_GETBUFFER((IMemAllocator*)this, pSample);
-#endif // DXMPERF
-
-    return NOERROR;
-}
-
 HRESULT CD3D12SurfaceAllocator::Alloc(void)
 {
 
@@ -223,12 +172,15 @@ HRESULT CD3D12SurfaceAllocator::Alloc(void)
     Free();
     
     long maxindex = m_pDec->GetBufferCount();
+    
     // create samples
     //this might ref some frame twice
     for (int i = 0; i < m_lCount; i++)
     {
         AVFrame *pFrame = av_frame_alloc();
+        
         pFrame->format = AV_PIX_FMT_D3D12_VLD;
+        
         int ret = 0;// av_hwframe_get_buffer(m_pFramesCtx, pFrame, 0);
         if (ret < 0)
         {
@@ -276,7 +228,7 @@ void CD3D12SurfaceAllocator::Free(void)
 STDMETHODIMP CD3D12SurfaceAllocator::ReleaseBuffer(IMediaSample *pSample)
 {
     CD3D12MediaSample *pD3D11Sample = dynamic_cast<CD3D12MediaSample *>(pSample);
-    if (0)//need to look how to do it pD3D11Sample) && pD3D11Sample->m_pAllocatorCookie != m_pFramesCtx)
+    if (0)//pD3D11Sample && pD3D11Sample->m_pAllocatorCookie != m_pFramesCtx)
     {
         
         DbgLog((LOG_TRACE, 10, L"CD3D12SurfaceAllocator::ReleaseBuffer: Freeing late sample"));

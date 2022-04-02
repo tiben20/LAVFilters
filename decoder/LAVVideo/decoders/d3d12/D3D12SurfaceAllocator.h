@@ -64,8 +64,6 @@ class CD3D12SurfaceAllocator : public CBaseAllocator
     CD3D12SurfaceAllocator(CDecD3D12 *pDec, HRESULT *phr);
     virtual ~CD3D12SurfaceAllocator();
 
-    STDMETHODIMP GetBuffer(IMediaSample **pSample);
-
     STDMETHODIMP ReleaseBuffer(IMediaSample *pSample);
 
     STDMETHODIMP_(BOOL) DecommitInProgress()

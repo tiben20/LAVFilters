@@ -112,6 +112,7 @@ class CDecD3D12 : public CDecAvcodec
     STDMETHODIMP UpdateStaging();
   private:
     CD3D12SurfaceAllocator* m_pAllocator = nullptr;
+    
     CD3D12Commands* m_pD3DCommands;
     ID3D12Debug* m_pD3DDebug;
     ID3D12Debug1* m_pD3DDebug1;

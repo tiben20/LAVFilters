@@ -65,7 +65,7 @@ configure() (
     --disable-encoders              \
     --disable-devices               \
     --disable-programs              \
-    --enable-debug                  \
+    --disable-debug                  \
     --disable-doc                   \
     --enable-avisynth               \
     --enable-bzlib                  \
