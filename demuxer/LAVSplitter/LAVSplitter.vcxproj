@@ -22,6 +22,7 @@
     <ProjectGuid>{F475F86F-3F7F-4B1D-82A6-078339F599FD}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>LAVSplitter</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.22000.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <Import Project="$(SolutionDir)common\platform.props" />
@@ -167,5 +168,6 @@
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
 </Project>

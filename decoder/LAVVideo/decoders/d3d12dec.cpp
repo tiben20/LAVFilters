@@ -103,6 +103,17 @@ done:
     return hr;
 }
 
+static DXGI_FORMAT d3d12va_map_sw_to_hw_format(enum AVPixelFormat pix_fmt)
+{
+    switch (pix_fmt)
+    {
+    case AV_PIX_FMT_YUV420P10:
+    case AV_PIX_FMT_P010: return DXGI_FORMAT_P010;
+    case AV_PIX_FMT_NV12:
+    default: return DXGI_FORMAT_NV12;
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // D3D12 decoder implementation
 ////////////////////////////////////////////////////////////////////////////////
@@ -428,11 +439,15 @@ STDMETHODIMP CDecD3D12::InitDecoder(AVCodecID codec, const CMediaType *pmt)
 
     if (FAILED(hr))
         return hr;
-
-
+    
+    if (check_dxva_codec_profile(m_pAVCtx, AV_PIX_FMT_D3D12_VLD) ==0)
+    {
+        DbgLog((LOG_TRACE, 10, L"-> Incompatible profile detected, falling back to software decoding"));
+        return E_FAIL;
+    }
     // initialize surface format to ensure the default media type is set properly
     //d3d11va_map_sw_to_hw_format(m_pAVCtx->sw_pix_fmt); the surface is always nv12 d3d11 can't always do nv12 but d3d12 can
-    m_SurfaceFormat = DXGI_FORMAT_NV12;
+    m_SurfaceFormat = d3d12va_map_sw_to_hw_format(m_pAVCtx->sw_pix_fmt);
     m_dwSurfaceWidth = dxva_align_dimensions(m_pAVCtx->codec_id, m_pAVCtx->coded_width);
     m_dwSurfaceHeight = dxva_align_dimensions(m_pAVCtx->codec_id, m_pAVCtx->coded_height);
 
@@ -789,8 +804,13 @@ STDMETHODIMP CDecD3D12::ReInitD3D12Decoder(AVCodecContext* s)
         hr = fmt->FindVideoServiceConversion(s, surface_format, &profileGUID);
         if (SUCCEEDED(hr))
             formats = fmt->GetDecodeSupport();
-
-        CreateD3D12Decoder();
+        if (SUCCEEDED(hr))
+            CreateD3D12Decoder();
+        else
+        {
+            DbgLog((LOG_ERROR, 10, L"-> No video service profile found"));
+            return hr;
+        }
         int idx, surface_idx = 0;
         const d3d_format_t* decoder_format;
         int bitdepth = 8;
@@ -799,8 +819,8 @@ STDMETHODIMP CDecD3D12::ReInitD3D12Decoder(AVCodecContext* s)
         UINT supportFlags = D3D12_FORMAT_SUPPORT1_DECODER_OUTPUT | D3D12_FORMAT_SUPPORT1_SHADER_LOAD;
 
 
-        m_SurfaceFormat = fmt->GetSupportedFormat();
-
+        //m_SurfaceFormat = fmt->GetSupportedFormat();
+        m_SurfaceFormat = d3d12va_map_sw_to_hw_format(m_pAVCtx->sw_pix_fmt);
 
 
         CD3DX12_HEAP_PROPERTIES m_textureProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_CUSTOM, 1, 1);
